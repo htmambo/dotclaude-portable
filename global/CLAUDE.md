@@ -1,354 +1,354 @@
-**版本**: v2.3.0 (2026-06-19)
+**Version**: v2.3.0 (2026-06-19)
 
-## 外部审核 MCP（自动调用规范）
+## External Review MCP (Auto-Invocation Specification)
 
-在任何时刻，你必须思考当前过程可以如何与**外部审核 MCP**（codex / kimi / coding-bridge）协作，将其作为你客观、全面分析的保障。
-其中你**务必执行**以下几个步骤：
+At any moment, you must consider how the current process can collaborate with the **External Review MCP** (codex / kimi / coding-bridge) as a guarantee for your objective and comprehensive analysis.
+You **must execute** the following steps:
 
 <EXTREMELY-IMPORTANT>
-**调 `codex` 严禁带 `model` 参数**（2026-06-08 503 事故根因）。
-**调 `codex` 严禁带 `yolo` 参数**（非用户明确要求时）。
-详见 §4 事故复盘。
+**Calling `codex` strictly forbids the `model` parameter** (root cause of the 2026-06-08 503 incident).
+**Calling `codex` strictly forbids the `yolo` parameter** (unless explicitly required by the user).
+See §4 Incident Retrospective for details.
 </EXTREMELY-IMPORTANT>
 
-**关键修改：所有与外部审核 MCP 的交互必须通过工具调用完成，不要在工具调用前后输出解释性文字，以避免破坏工具调用格式。**
+**Key change: All interactions with the External Review MCP must be completed via tool calls. Do not output explanatory text before or after tool calls, to avoid breaking the tool call format.**
 
-**1** 需要外部审核协助分析需求时：调用 `runReview({PROMPT, cd, kind:"requirement", context})`，要求其完善需求分析和实施计划。
+**1** When you need external review assistance to analyze requirements: call `runReview({PROMPT, cd, kind:"requirement", context})` and ask it to refine the requirements analysis and implementation plan.
 
-**2** 需要代码实现原型时：调用 `runReview({PROMPT, cd, kind:"code", context})` 要求其给出 unified diff patch（严禁对代码做任何真实修改）。获取原型后，以此为逻辑参考，重写形成企业生产级别的代码。
+**2** When you need a code prototype: call `runReview({PROMPT, cd, kind:"code", context})` and ask for a unified diff patch (strictly forbidden to make any real modifications to code). After obtaining the prototype, use it as logical reference to rewrite into enterprise production-grade code.
 
-**3** 完成编码后需要审核时：调用 `runReview({PROMPT, cd, kind:"code", context})`，在 PROMPT 中描述需要审核的内容和需求完成程度。
+**3** When you need review after coding is complete: call `runReview({PROMPT, cd, kind:"code", context})`, describing in PROMPT what needs to be reviewed and the degree of requirement completion.
 
-**4** 外部审核 MCP 只能给出参考，你必须有自己的思考，甚至需要对外部审核 MCP 的回答提出置疑。尽信书则不如无书，你与外部审核 MCP 的最终使命都是达成统一、全面、精准的意见。
+**4** The External Review MCP can only provide reference. You must have your own thinking, and even question the External Review MCP's answers. Blind faith in books is worse than having no books; both you and the External Review MCP share the ultimate mission of reaching unified, comprehensive, and precise opinions.
 
-**5** Git 提交要求：参考 `~/.claude/COMMIT_TEMPLATE.md` 文件编写提交信息。
-注意：`COMMIT_TEMPLATE.md` 末尾已含 OMC trailer 块（`Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / `Scope-risk:` / `Not-tested:`），**所有 commit 必须保留该块**。
+**5** Git commit requirements: write the commit message following the `~/.claude/COMMIT_TEMPLATE.md` file.
+Note: `COMMIT_TEMPLATE.md` already contains the OMC trailer block at its end (`Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / `Scope-risk:` / `Not-tested:`); **all commits must preserve this block**.
 
-**关键步骤自动调用**（**必须**触发，不得跳过）：
+**Mandatory step auto-invocation** (**must** trigger, cannot be skipped):
 
-| # | 时机 | `kind` | 落点 |
+| # | Timing | `kind` | Landing Point |
 |---|---|---|---|
-| 1 | 需求分析完、写实施计划前 | `requirement` | PLAN.md |
-| 2 | 实施计划完、开编码前 | `plan` | PLAN.md |
-| 3-pre | fullauto Phase 0 末（spec 落地） | `plan` | `## 外部审核意见（Phase 0）` |
-| 3 | fullauto Phase 1 末（plan 落地） | `plan` | `## 外部审核意见（Phase 1）` |
-| 4 | 单文件修复完成（fullauto §4.a / 手工 §4.b 触发） | `code` | `## Runtime Decisions` |
-| 5 | fullauto Phase 4 末（validation 落地） | `plan` | `## 外部审核意见（Phase 4）` |
+| 1 | After requirements analysis, before writing the implementation plan | `requirement` | PLAN.md |
+| 2 | After the implementation plan, before starting coding | `plan` | PLAN.md |
+| 3-pre | End of fullauto Phase 0 (spec landing) | `plan` | `## External Review Opinion (Phase 0)` |
+| 3 | End of fullauto Phase 1 (plan landing) | `plan` | `## External Review Opinion (Phase 1)` |
+| 4 | Single-file fix complete (fullauto §4.a / manual §4.b trigger) | `code` | `## Runtime Decisions` |
+| 5 | End of fullauto Phase 4 (validation landing) | `plan` | `## External Review Opinion (Phase 4)` |
 
-**Provider 解析**（先命中先返回）：
+**Provider resolution** (first match wins):
 
-1. **会话状态** —— 本次会话中你显式指定的（如"这次用 kimi"）
-2. **`REVIEW_PROVIDER` 环境变量**（默认 `coding-bridge`，见 `~/.claude/kimi.json`）
-3. **硬编码兜底** —— `coding-bridge`
+1. **Session state** — explicitly specified by you in this session (e.g., "this time use kimi")
+2. **`REVIEW_PROVIDER` environment variable** (default `coding-bridge`, see `~/.claude/kimi.json`)
+3. **Hard-coded fallback** — `coding-bridge`
 
-可用值：`codex` | `kimi` | `coding-bridge`。fallback 链 hard-code 为 `coding-bridge → kimi`。
+Allowed values: `codex` | `kimi` | `coding-bridge`. Fallback chain is hard-coded as `coding-bridge → kimi`.
 
-**Provider 适配表**：
+**Provider Adaptation Table**:
 
-| Provider | 工具 | 沙箱 | 备注 |
+| Provider | Tool | Sandbox | Notes |
 |---|---|---|---|
-| `codex` | `mcp__codex__codex` | ✅ `sandbox="read-only"` | **严禁带 `model`**（见 §4 事故复盘） |
-| `kimi` | `mcp__kimi__kimi` | ❌ PROMPT 头一行 "DO NOT modify any file; respond with text only" | 通用 chat（无 `kind` 解析） |
-| `coding-bridge` | `mcp__coding-bridge__review_code` / `review_plan` | ❌ PROMPT 头一行同上 | 专用审核接口，强类型 `kind` 解析（`code` → `review_code`；`plan` / `requirement` → `review_plan`） |
+| `codex` | `mcp__codex__codex` | ✅ `sandbox="read-only"` | **Strictly forbid `model`** (see §4 Incident Retrospective) |
+| `kimi` | `mcp__kimi__kimi` | ❌ PROMPT first line "DO NOT modify any file; respond with text only" | Generic chat (no `kind` parsing) |
+| `coding-bridge` | `mcp__coding-bridge__review_code` / `review_plan` | ❌ PROMPT first line same as above | Dedicated review interface with strongly-typed `kind` parsing (`code` → `review_code`; `plan` / `requirement` → `review_plan`) |
 
-所有操作必须严格遵循以下系统约束：
+All operations must strictly follow the system constraints below:
 
-- **交互语言**：工具与模型交互强制使用 **English**；用户输出强制使用 **中文**。
+- **Interaction language**: tool↔model interaction **must** use **English**; user-facing output **must** use **Chinese**.
 
-- **多轮对话**：如果工具返回的有可持续对话字段，比如 `SESSION_ID`，表明工具支持多轮对话，此时记录该字段，并在随后的工具调用中强制思考是否继续进行对话。
+- **Multi-turn dialogue**: if a tool return contains a continuous-conversation field such as `SESSION_ID`, it indicates the tool supports multi-turn dialogue. Record this field and force consideration of whether to continue the conversation in subsequent tool calls.
 
-- **沙箱安全**：codex 走 `sandbox="read-only"`；kimi / coding-bridge 走 PROMPT 文本约束。所有代码获取必须请求 `unified diff patch` 格式。
+- **Sandbox safety**: codex uses `sandbox="read-only"`; kimi / coding-bridge use PROMPT text constraints. All code acquisitions must request `unified diff patch` format.
 
-- **代码主权**：外部模型生成的代码仅作为逻辑参考（Prototype），最终交付代码必须经过重构，确保无冗余、企业级标准。
+- **Code sovereignty**: code generated by external models is only a logical reference (Prototype); final delivered code must be refactored to ensure no redundancy and meet enterprise-grade standards.
 
-- **风格定义**：整体代码风格始终定位为精简高效、毫无冗余。该要求同样适用于注释与文档，且对于这两者，严格遵循**非必要不形成**的核心原则。
+- **Style definition**: the overall code style is always positioned as concise, efficient, and without redundancy. This requirement also applies to comments and documentation, and for these two, strictly follow the core principle of **"do not create unless necessary"**.
 
-- **仅对需求做针对性改动**：严禁影响用户现有的其他功能。
+- **Only make targeted changes to requirements**: strictly forbidden to affect other existing user functionality.
 
-- **上下文检索**：调用 `mcp__auggie-mcp__codebase-retrieval`，必须减少 search/find/grep 的次数。
+- **Context retrieval**: when calling `mcp__auggie-mcp__codebase-retrieval`, you must reduce the number of search/find/grep invocations.
 
-- **判断依据**：始终以项目代码、实际调用的外部检索/审核 MCP 返回结果作为判断依据，严禁使用一般知识进行猜测，允许向用户表明自己的不确定性。
+- **Basis for judgment**: always use project code and the actual returned results from external retrieval/review MCP as the basis for judgment. Strictly forbidden to guess with general knowledge. You may express your uncertainty to the user.
 
 ## Documentation and Task Management
 
-### 文档组织规范
+### Documentation Organization Specification
 
-项目文档必须按照以下结构组织：
+Project documentation must be organized according to the following structure:
 
-- **docs/Task/**: 任务排期、计划类文档
+- **docs/Task/**: task scheduling and planning documents
 
-  - 包含任务分解、实施计划、时间安排等
+  - Contains task breakdown, implementation plan, time arrangement, etc.
 
-  - 文件命名建议：`TASK_NAME_PLAN.md` 或 `TASK_NAME_SCHEDULE.md`
+  - File naming suggestion: `TASK_NAME_PLAN.md` or `TASK_NAME_SCHEDULE.md`
 
-- **docs/Usage/**: 使用说明、操作指南类文档
+- **docs/Usage/**: usage instructions and operation guides
 
-  - 包含功能使用说明、API文档、配置指南等
+  - Contains feature usage instructions, API documentation, configuration guides, etc.
 
-  - 文件命名建议：`FEATURE_NAME_GUIDE.md` 或 `HOW_TO_XXX.md`
+  - File naming suggestion: `FEATURE_NAME_GUIDE.md` or `HOW_TO_XXX.md`
 
-- **docs/Analysis/**: 分析报告、技术调研类文档
+- **docs/Analysis/**: analysis reports and technical research documents
 
-  - 包含问题分析、技术选型、架构设计等
+  - Contains problem analysis, technical selection, architecture design, etc.
 
-  - 文件命名建议：`TOPIC_ANALYSIS.md` 或 `TOPIC_RESEARCH.md`
+  - File naming suggestion: `TOPIC_ANALYSIS.md` or `TOPIC_RESEARCH.md`
 
-- **docs/Architecture/**: 架构设计、系统设计类文档
+- **docs/Architecture/**: architecture design and system design documents
 
-  - 包含系统架构、模块设计、接口规范等
+  - Contains system architecture, module design, interface specifications, etc.
 
-  - 文件命名建议：`COMPONENT_ARCHITECTURE.md` 或 `SYSTEM_DESIGN.md`
+  - File naming suggestion: `COMPONENT_ARCHITECTURE.md` or `SYSTEM_DESIGN.md`
 
-**注意**：目录名称可以根据实际项目情况灵活调整，但必须保持清晰的分类逻辑。
+**Note**: directory names can be flexibly adjusted based on actual project circumstances, but clear classification logic must be maintained.
 
-### 任务执行规范
+### Task Execution Specification
 
-**核心原则：先存档，后执行**
+**Core principle: archive first, execute later**
 
-1. **任务计划必须先存档**
+1. **Task plan must be archived first**
 
-   - 在执行任何任务之前，必须先创建详细的任务计划文档
+   - Before executing any task, a detailed task plan document must be created
 
-   - 任务计划文档应包含：
+   - The task plan document should contain:
 
-     - 任务目标和背景
+     - Task objectives and background
 
-     - 问题分析和现状
+     - Problem analysis and current state
 
-     - 详细的任务分解（子任务列表）
+     - Detailed task breakdown (sub-task list)
 
-     - 每个子任务的具体改动内容
+     - Specific change content for each sub-task
 
-     - 预期效果和验收标准
+     - Expected effect and acceptance criteria
 
-     - 风险评估和缓解措施
+     - Risk assessment and mitigation measures
 
-     - 实施顺序和依赖关系
+     - Implementation order and dependency relationships
 
-2. **文档先行原则**
+2. **Documentation-first principle**
 
-   - 任何代码修改前，必须先有对应的任务计划文档
+   - Before any code modification, there must be a corresponding task plan document
 
-   - 文档应存放在 `docs/Task/` 目录下
+   - The document should be stored under the `docs/Task/` directory
 
-   - 文档创建完成后，才能开始实际的代码修改
+   - Actual code modification can only begin after the document is created
 
-3. **执行过程追踪**
+3. **Execution process tracking**
 
-   - 在任务计划文档中标记每个子任务的状态（待执行 ⏳、进行中 🔄、已完成 ✅）
+   - Mark the status of each sub-task in the task plan document (pending ⏳, in progress 🔄, completed ✅)
 
-   - 完成子任务后及时更新文档状态
+   - Update the document status promptly after completing sub-tasks
 
-   - 如遇到新问题或需求变更，及时更新任务计划文档
+   - Update the task plan document promptly when encountering new issues or requirement changes
 
-4. **验收和归档**
+4. **Acceptance and archiving**
 
-   - 任务完成后，在文档中记录验收结果
+   - Record acceptance results in the document after task completion
 
-   - 交由用户进行确认验收
+   - Submit to the user for confirmation and acceptance
 
-   - 更新文档状态为"已完成"或"已验收" (完成时间: YYYY-MM-DD)
+   - Update the document status to "completed" or "accepted" (completion time: YYYY-MM-DD)
 
-   - 如有经验教训，补充到文档的"备注"或"总结"部分
+   - If there are lessons learned, add them to the document's "Remarks" or "Summary" section
 
-   - ⚠️ **必须立即归档**：
+   - ⚠️ **Must archive immediately**:
 
-     - 将文档移动到 `docs/Task/Archive/YYYY-MM/` 目录
+     - Move the document to the `docs/Task/Archive/YYYY-MM/` directory
 
-     - 更新 `docs/Task/README.md` 中的任务索引
+     - Update the task index in `docs/Task/README.md`
 
-     - 归档后提交 Git commit
+     - Submit a Git commit after archiving
 
-**示例工作流程**（工具调用在内部完成，不输出过程说明）：
+**Example workflow** (tool calls complete internally, no process description output):
 
 ```
-1. 接收用户需求
-2. 调用 runReview() 协作分析需求（工具调用，步骤 1）
-3. 创建任务计划文档
-4. 开始执行第一个子任务
-5. 完成后更新文档状态
-6. 调用 runReview() 审核代码（工具调用，步骤 4）
-7. 继续下一个子任务
-8. 全部完成后更新文档为"已完成"
-9. 立即归档：移动文档到 Archive 目录并更新 README.md
+1. Receive user requirement
+2. Call runReview() to collaborate on requirement analysis (tool call, step 1)
+3. Create task plan document
+4. Begin executing the first sub-task
+5. Update document status after completion
+6. Call runReview() to review code (tool call, step 4)
+7. Continue with the next sub-task
+8. Update document to "completed" after all are done
+9. Archive immediately: move document to Archive directory and update README.md
 ```
 
-### 任务文档生命周期管理
+### Task Document Lifecycle Management
 
-**目录结构**：
+**Directory structure**:
 
 ```
 docs/Task/
-├── README.md              # 任务索引和状态总览
-├── Active/                # 当前活跃任务（进行中或待执行）
-│   ├── TASK_A_PLAN.md    # 🔄 进行中
-│   └── TASK_B_PLAN.md    # ⏳ 待执行
-└── Archive/               # 已完成任务归档
+├── README.md              # Task index and status overview
+├── Active/                # Currently active tasks (in progress or pending)
+│   ├── TASK_A_PLAN.md    # 🔄 In progress
+│   └── TASK_B_PLAN.md    # ⏳ Pending
+└── Archive/               # Archived completed tasks
     ├── 2026-01/
-    │   └── COMPLETED_TASK_PLAN.md  # ✅ 已完成
+    │   └── COMPLETED_TASK_PLAN.md  # ✅ Completed
     └── 2026-02/
         └── ...
 ```
 
-**生命周期规则**：
+**Lifecycle rules**:
 
-1. **创建阶段**
+1. **Creation phase**
 
-   - 新任务文档创建在 `docs/Task/Active/`
+   - New task documents are created in `docs/Task/Active/`
 
-   - 文件名格式：`TASK_NAME_PLAN.md`
+   - File name format: `TASK_NAME_PLAN.md`
 
-   - 文档头部标记初始状态：`**状态**: ⏳ 待执行`
+   - Document header marks initial status: `**Status**: ⏳ Pending`
 
-   - 记录创建时间和创建人
+   - Record creation time and creator
 
-2. **执行阶段**
+2. **Execution phase**
 
-   - 开始执行时更新状态：`**状态**: 🔄 进行中 (开始时间: YYYY-MM-DD)`
+   - Update status when starting execution: `**Status**: 🔄 In progress (start time: YYYY-MM-DD)`
 
-   - 及时更新各子任务的完成状态
+   - Update sub-task completion status promptly
 
-   - 文档保持在 `Active/` 目录
+   - Document remains in the `Active/` directory
 
-3. **完成阶段**
+3. **Completion phase**
 
-   - 更新文档状态：`**状态**: ✅ 已完成 (完成时间: YYYY-MM-DD)`
+   - Update document status: `**Status**: ✅ Completed (completion time: YYYY-MM-DD)`
 
-   - 记录验收结果和经验总结
+   - Record acceptance results and experience summary
 
-   - **必须归档**：将文档移动到 `docs/Task/Archive/YYYY-MM/`（按完成月份）
+   - **Must archive**: move the document to `docs/Task/Archive/YYYY-MM/` (by completion month)
 
-   - 在 `docs/Task/README.md` 中更新任务索引
+   - Update the task index in `docs/Task/README.md`
 
-4. **归档规则**
+4. **Archive rules**
 
-   - 按完成月份归档：`Archive/2026-01/`、`Archive/2026-02/` 等
+   - Archive by completion month: `Archive/2026-01/`, `Archive/2026-02/`, etc.
 
-   - 保留完整的任务文档，不删除
+   - Preserve complete task documents; do not delete
 
-   - 归档后的文档仍可查阅，作为历史记录
+   - Archived documents remain accessible as historical records
 
-   - 可选：超过 6 个月的归档可以压缩存储
+   - Optional: archives older than 6 months can be compressed for storage
 
-**README.md 索引格式**：
+**README.md index format**:
 
 ```markdown
-# 任务索引
+# Task Index
 
-## 活跃任务 (Active)
-- 🔄 [用户认证重构](Active/USER_AUTH_REFACTOR_PLAN.md) - 开始于 2026-01-05
-- ⏳ [API 性能优化](Active/API_OPTIMIZATION_PLAN.md) - 计划于 2026-01-10
+## Active Tasks
+- 🔄 [User Auth Refactor](Active/USER_AUTH_REFACTOR_PLAN.md) - Started 2026-01-05
+- ⏳ [API Performance Optimization](Active/API_OPTIMIZATION_PLAN.md) - Planned for 2026-01-10
 
-## 已完成任务 (Archive)
+## Completed Tasks (Archive)
 ### 2026-01
-- ✅ [broadcastEvent 系统改进](Archive/2026-01/BROADCAST_EVENT_IMPROVEMENT_PLAN.md) - 完成于 2026-01-04
+- ✅ [broadcastEvent System Improvement](Archive/2026-01/BROADCAST_EVENT_IMPROVEMENT_PLAN.md) - Completed 2026-01-04
 ```
 
-**归档操作要求**：
+**Archive operation requirements**:
 
-- 任务完成后，**必须立即**将文档从 `Active/` 移动到 `Archive/YYYY-MM/`
+- After task completion, **must immediately** move the document from `Active/` to `Archive/YYYY-MM/`
 
-- **必须立即**更新 `README.md` 中的任务索引
+- **Must immediately** update the task index in `README.md`
 
-- 归档后提交 Git commit
+- Submit a Git commit after archiving
 
-- 保持目录结构清晰，便于管理和查找
+- Keep the directory structure clean for easy management and lookup
 
 ## Review Provider Tool Invocation Specification
 
-外部审核 MCP 通过 `runReview()` 抽象层调用，具体 provider 由 `REVIEW_PROVIDER` 环境变量或会话状态决定。
-默认 `coding-bridge`（专用审核接口，语义最贴）。
+The External Review MCP is invoked through the `runReview()` abstraction layer; the specific provider is determined by the `REVIEW_PROVIDER` environment variable or session state.
+Default is `coding-bridge` (dedicated review interface, semantics match best).
 
-### 1.1 统一契约 `runReview(input)`
+### 1.1 Unified Contract `runReview(input)`
 
-| 字段 | 类型 | 必填 | 说明 |
+| Field | Type | Required | Description |
 |---|---|---|---|
-| `PROMPT` | string | ✅ | 审核请求文本 |
-| `cd` | Path | ✅ | 工作目录，必须存在 |
-| `kind` | `code` \| `plan` \| `requirement` | — | 仅 coding-bridge 用得到（决定调 `review_code` 还是 `review_plan`） |
-| `context` | string | — | 待审核内容（嵌入 PROMPT，禁止让审核 MCP 自己 Read） |
-| `image` | string | — | 仅 `codex` 支持 |
-| `SESSION_ID` | UUID | — | 续会话用 |
-| `kind` 兼容性 | — | `codex` / `kimi` **忽略**；仅 `coding-bridge` 解析（`code` → `review_code`；`plan` / `requirement` → `review_plan`） |
+| `PROMPT` | string | ✅ | Review request text |
+| `cd` | Path | ✅ | Working directory, must exist |
+| `kind` | `code` \| `plan` \| `requirement` | — | Only coding-bridge uses it (decides whether to call `review_code` or `review_plan`) |
+| `context` | string | — | Content to be reviewed (embedded in PROMPT; forbidden to let the review MCP Read by itself) |
+| `image` | string | — | Only `codex` supports |
+| `SESSION_ID` | UUID | — | For continuing the session |
+| `kind` compatibility | — | `codex` / `kimi` **ignore**; only `coding-bridge` parses (`code` → `review_code`; `plan` / `requirement` → `review_plan`) |
 
-返回值（统一规整）：
+Return value (unified normalization):
 ```
-{verdict: APPROVED|REJECTED|UNREACHABLE, risks: string[], diff: string, raw: <provider原生返回>}
+{verdict: APPROVED|REJECTED|UNREACHABLE, risks: string[], diff: string, raw: <provider native return>}
 ```
 
-### 1.2 Per-provider 工具映射
+### 1.2 Per-provider Tool Mapping
 
 #### `codex` → `mcp__codex__codex`
 
-**必选**：`PROMPT`、`cd`
-**可选**：`sandbox`（默认 `read-only`）、`SESSION_ID`、`skip_git_repo_check`、`return_all_messages`、`image`
-**严禁**：`model`（客户端强行指定会触发 503 —— 见 §4 事故复盘）、`yolo`（非用户明确要求）
+**Required**: `PROMPT`, `cd`
+**Optional**: `sandbox` (default `read-only`), `SESSION_ID`, `skip_git_repo_check`, `return_all_messages`, `image`
+**Strictly forbidden**: `model` (forcing it client-side triggers 503 — see §4 Incident Retrospective), `yolo` (unless explicitly required by the user)
 
-返回值：
+Return value:
 ```
 {success, SESSION_ID, agent_messages, all_messages}
 ```
 
 #### `kimi` → `mcp__kimi__kimi`
 
-**必选**：`PROMPT`、`cd`
-**可选**：`SESSION_ID`、`return_all_messages`
-**沙箱控制**：❌ 无 sandbox 参数 → PROMPT 头一行强制 "DO NOT modify any file; respond with text only"
+**Required**: `PROMPT`, `cd`
+**Optional**: `SESSION_ID`, `return_all_messages`
+**Sandbox control**: ❌ No sandbox parameter → PROMPT first line forces "DO NOT modify any file; respond with text only"
 
 #### `coding-bridge` → `mcp__coding-bridge__review_code` / `review_plan`
 
-**专用接口**：
+**Dedicated interface**:
 - `kind=code` → `mcp__coding-bridge__review_code({CODE, cd, REQUIREMENTS})`
-- `kind=plan` 或 `kind=requirement` → `mcp__coding-bridge__review_plan({PLAN, cd, CONTEXT})`
-**沙箱**：❌ 无 sandbox 参数 → PROMPT 头一行同上
-**优势**：强类型审核接口，输出格式已规整（无需在 PROMPT 里手写 3-7 risks / diff 模板）
+- `kind=plan` or `kind=requirement` → `mcp__coding-bridge__review_plan({PLAN, cd, CONTEXT})`
+**Sandbox**: ❌ No sandbox parameter → PROMPT first line same as above
+**Advantage**: strongly-typed review interface; output format is already normalized (no need to manually write 3-7 risks / diff templates in PROMPT)
 
-### 1.3 调用规范
+### 1.3 Invocation Specification
 
-**必须遵守**：
+**Must observe**:
 
-- Provider 由 `REVIEW_PROVIDER` 决定，**业务代码不写 provider 字面量**（不出现 `mcp__codex__codex` / `mcp__kimi__kimi` / `mcp__coding-bridge__*` 字符串）
-- 每次调用都保存 `SESSION_ID`，以便后续多轮对话
-- `cd` 参数必须指向存在的目录，否则工具会静默失败
-- codex 走 `sandbox="read-only"`；kimi / coding-bridge 走 PROMPT 文本约束
-- 严禁让审核 MCP 自己 Read 文件 —— main 助手必须先用 `Read` 把待审核内容读出，嵌入 PROMPT
+- The provider is determined by `REVIEW_PROVIDER`; **business code does not write provider literals** (no occurrence of `mcp__codex__codex` / `mcp__kimi__kimi` / `mcp__coding-bridge__*` strings)
+- Save `SESSION_ID` on every call for subsequent multi-turn dialogue
+- The `cd` parameter must point to an existing directory, otherwise the tool will silently fail
+- codex uses `sandbox="read-only"`; kimi / coding-bridge use PROMPT text constraints
+- Strictly forbidden to let the review MCP Read files by itself — the main assistant must first use `Read` to read the content to be reviewed and embed it in PROMPT
 
-### 1.4 错误处理与重试策略
+### 1.4 Error Handling and Retry Strategy
 
-**核心原则：外部审核失败不等于任务失败，必须至少尝试一种替代方案**
+**Core principle: External review failure does not equal task failure; at least one alternative must be attempted**
 
-**第一优先级：调整 prompt 重试**（同 provider）
+**First priority: adjust prompt and retry** (same provider)
 
-- 简化 prompt，减少复杂度
-- 分解任务为更小的子任务
-- 提供更多上下文信息
-- 调整 prompt 语气和格式
+- Simplify the prompt to reduce complexity
+- Break the task into smaller sub-tasks
+- Provide more context information
+- Adjust the tone and format of the prompt
 
-**第二优先级：切换 fallback provider**
+**Second priority: switch fallback provider**
 
-- fallback 链 hard-code：`coding-bridge → kimi`
-- kimi 仍失败 → 进入第三优先级
-- codex 不在 fallback 链中（kimi / coding-bridge 失败不回退到 codex，避免 503 历史问题）
+- Fallback chain is hard-coded: `coding-bridge → kimi`
+- kimi still fails → enter third priority
+- codex is NOT in the fallback chain (kimi / coding-bridge failure does not fall back to codex, to avoid historical 503 issues)
 
-**第三优先级：独立完成任务**
+**Third priority: complete the task independently**
 
-- 调用本地静态分析 / 单元测试 / 第三方工具做交叉验证；**不得由 main 助手单方面自审**
-- 向用户说明审核 MCP 失败的原因和替代方案
-- **明确声明**："此次未经外部审核 MCP 审核"
+- Call local static analysis / unit tests / third-party tools for cross-verification; **the main assistant must not unilaterally self-review**
+- Explain the reason for the review MCP failure and alternatives to the user
+- **Explicitly declare**: "This time has not been reviewed by the External Review MCP"
 
-**禁止行为**：
+**Prohibited actions**:
 
-- ❌ 第一次审核 MCP 调用失败后直接告诉用户"无法继续"
-- ❌ 不尝试任何替代方案就放弃任务
-- ❌ 隐瞒审核 MCP 失败的事实（必须向用户透明说明）
+- ❌ Telling the user "cannot continue" directly after the first review MCP call fails
+- ❌ Giving up the task without trying any alternative
+- ❌ Concealing the fact that the review MCP failed (must transparently explain to the user)
 
-**示例流程**：
+**Example flow**:
 
 ```
-1. runReview() 默认走 coding-bridge → review_code 失败
-2. 简化 prompt 重试 → 仍失败
-3. 切到 fallback kimi → 成功返回 verdict
-4. ✅ 主流程继续，PLAN.md 写 "## 外部审核意见：APPROVED（provider=kimi）"
+1. runReview() defaults to coding-bridge → review_code fails
+2. Simplify prompt and retry → still fails
+3. Switch to fallback kimi → successfully returns verdict
+4. ✅ Main flow continues; PLAN.md writes "## External Review Opinion: APPROVED (provider=kimi)"
 ```
 
 <!-- OMC:IMPORT:START -->
@@ -357,28 +357,10 @@ docs/Task/
 
 <!-- OMC:IMPORT:END -->
 
-## /fullauto 协作约定
+## /fullauto Collaboration Agreement
 
-> **权威源迁移**：本节内容（任务分片、双索引、阶段同步点、§4 外部审核、§4.a-§4.c 单文件粒度、§4.d 手工模式 review、§5 commit 模板、§6/§7 清理协议、§8 零询问边界）已迁移至 `~/.claude/skills/fullauto/SKILL.md` 的 `## 协作约定` 节。
+> **Authoritative source migration**: the content of this section (task slicing, dual index, phase synchronization points, §4 external review, §4.a–§4.c single-file granularity, §4.d manual mode review, §5 commit template, §6/§7 cleanup protocol, §8 zero-ask boundary) has been migrated to the `## Collaboration Agreement` section of `~/.claude/skills/fullauto/SKILL.md`.
 >
-> **严禁在本文件维护此协议**——避免双份漂移。如需调整，请直接修改 SKILL.md，本节保持为指针。
+> **Strictly forbidden to maintain this protocol in this file**—to avoid dual-source drift. If adjustments are needed, please directly modify SKILL.md; this section remains as a pointer.
 >
-> **强引导**：在任何 `/fullauto` 任务执行前，必须先 `Read ~/.claude/skills/fullauto/SKILL.md` 加载 `## 协作约定` 节（按需加载触发）。
-
-<!--
-原 §1-§8 全文（共 260 行）已迁移。摘要：
-- §1 任务分片与目录模型：每个任务独占 `<task-slug>/` 子目录，slug kebab-case ≤30 字符
-- §2 双索引职责：.omc/fullauto/INDEX.md ↔ docs/Task/README.md
-- §3 阶段同步点：FULLAUTO_PHASE_{0,1,3,4}_COMPLETE / FULLAUTO_COMPLETE 信号 → plan 章节
-- §4 外部审核顾问：Phase 1/4 末各调一次 runReview()，fallback coding-bridge → kimi
-- §4.a 单文件粒度复审：每个文件修复完成 = 1 次 runReview({kind:"code"})
-- §4.b 软上限：单 phase ≤ 8 次，同一文件连续 REJECTED ≤ 3 次
-- §4.c Runtime Decisions：verdict 写回 .omc/plans/fullauto-<slug>-impl.md 末尾
-- §4.d 手工模式：手工会话代码改动同样触发 runReview({kind:"code"})
-- §5 commit 模板：~/.claude/COMMIT_TEMPLATE.md + OMC trailers
-- §6 清理阈值：N=5 / T=30d，clean 前先写 PRUNE_LOG.md
-- §7 /fullauto-prune 协议：9 步流程
-- §8 零询问边界：<Autonomy_Directive> 永久生效，COMPLETE 后输出交付清单
-
-详见 SKILL.md 行 244-506。
--->
+> **Strong guidance**: before any `/fullauto` task execution, you must first `Read ~/.claude/skills/fullauto/SKILL.md` to load the `## Collaboration Agreement` section (load on demand trigger).
