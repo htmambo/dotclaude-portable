@@ -25,6 +25,14 @@
 - [ ] 代码审查完成
 
 相关 Issue：Closes #xxx
+
+> OMC trailers:
+> Constraint: <限制条件，例：仅修改 docs/Task/>
+> Rejected: <备选方案> | <拒绝原因>
+> Directive: <关键决策来源，例：审核报告 / 用户明确要求>
+> Confidence: <高|中|低> | <依据>
+> Scope-risk: <本次改动可能影响到的边界>
+> Not-tested: <未覆盖的验证项>
 ```
 
 ## 类型说明
@@ -65,5 +73,13 @@ feat(cookie): 实现 Cookie 完整管理系统
 - [x] 代码审查完成
 
 Closes #23
+
+> OMC trailers:
+> Constraint: 仅在 cookie 子系统内
+> Rejected: 直接用 requests 调接口 | 缺乏会话管理
+> Directive: 用户明确要求支持 Netscape 格式
+> Confidence: 高 | 单元测试覆盖 95% 分支
+> Scope-risk: enhanced_browser.py 公共 API 签名未变
+> Not-tested: 并发场景下文件锁行为
 ```
 

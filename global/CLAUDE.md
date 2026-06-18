@@ -1,7 +1,15 @@
+**版本**: v2.3.0 (2026-06-19)
+
 ## 外部审核 MCP（自动调用规范）
 
 在任何时刻，你必须思考当前过程可以如何与**外部审核 MCP**（codex / kimi / coding-bridge）协作，将其作为你客观、全面分析的保障。
 其中你**务必执行**以下几个步骤：
+
+<EXTREMELY-IMPORTANT>
+**调 `codex` 严禁带 `model` 参数**（2026-06-08 503 事故根因）。
+**调 `codex` 严禁带 `yolo` 参数**（非用户明确要求时）。
+详见 §4 事故复盘。
+</EXTREMELY-IMPORTANT>
 
 **关键修改：所有与外部审核 MCP 的交互必须通过工具调用完成，不要在工具调用前后输出解释性文字，以避免破坏工具调用格式。**
 
@@ -14,6 +22,7 @@
 **4** 外部审核 MCP 只能给出参考，你必须有自己的思考，甚至需要对外部审核 MCP 的回答提出置疑。尽信书则不如无书，你与外部审核 MCP 的最终使命都是达成统一、全面、精准的意见。
 
 **5** Git 提交要求：参考 `~/.claude/COMMIT_TEMPLATE.md` 文件编写提交信息。
+注意：`COMMIT_TEMPLATE.md` 末尾已含 OMC trailer 块（`Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / `Scope-risk:` / `Not-tested:`），**所有 commit 必须保留该块**。
 
 **关键步骤自动调用**（**必须**触发，不得跳过）：
 
@@ -38,8 +47,8 @@
 | Provider | 工具 | 沙箱 | 备注 |
 |---|---|---|---|
 | `codex` | `mcp__codex__codex` | ✅ `sandbox="read-only"` | **严禁带 `model`**（见 §4 事故复盘） |
-| `kimi` | `mcp__kimi__kimi` | ❌ PROMPT 头一行 "DO NOT modify any file; respond with text only" | 通用 chat |
-| `coding-bridge` | `mcp__coding-bridge__review_code` / `review_plan` | ❌ PROMPT 头一行同上 | 专用审核接口，优先用 `kind=code→review_code`、`kind=plan→review_plan`、`kind=requirement→review_plan` |
+| `kimi` | `mcp__kimi__kimi` | ❌ PROMPT 头一行 "DO NOT modify any file; respond with text only" | 通用 chat（无 `kind` 解析） |
+| `coding-bridge` | `mcp__coding-bridge__review_code` / `review_plan` | ❌ PROMPT 头一行同上 | 专用审核接口，强类型 `kind` 解析（`code` → `review_code`；`plan` / `requirement` → `review_plan`） |
 
 所有操作必须严格遵循以下系统约束：
 
@@ -57,7 +66,7 @@
 
 - **上下文检索**：调用 `mcp__auggie-mcp__codebase-retrieval`，必须减少 search/find/grep 的次数。
 
-- **判断依据**：始终以项目代码、grok 的搜索结果作为判断依据，严禁使用一般知识进行猜测，允许向用户表明自己的不确定性。
+- **判断依据**：始终以项目代码、实际调用的外部检索/审核 MCP 返回结果作为判断依据，严禁使用一般知识进行猜测，允许向用户表明自己的不确定性。
 
 ## Documentation and Task Management
 
@@ -259,6 +268,7 @@ docs/Task/
 | `context` | string | — | 待审核内容（嵌入 PROMPT，禁止让审核 MCP 自己 Read） |
 | `image` | string | — | 仅 `codex` 支持 |
 | `SESSION_ID` | UUID | — | 续会话用 |
+| `kind` 兼容性 | — | `codex` / `kimi` **忽略**；仅 `coding-bridge` 解析（`code` → `review_code`；`plan` / `requirement` → `review_plan`） |
 
 返回值（统一规整）：
 ```
@@ -282,7 +292,7 @@ docs/Task/
 
 **必选**：`PROMPT`、`cd`
 **可选**：`SESSION_ID`、`return_all_messages`
-**沙箱**：❌ 无 sandbox 参数 → PROMPT 头一行强制 "DO NOT modify any file; respond with text only"
+**沙箱控制**：❌ 无 sandbox 参数 → PROMPT 头一行强制 "DO NOT modify any file; respond with text only"
 
 #### `coding-bridge` → `mcp__coding-bridge__review_code` / `review_plan`
 
@@ -321,7 +331,7 @@ docs/Task/
 
 **第三优先级：独立完成任务**
 
-- 使用自己的能力独立完成审核
+- 调用本地静态分析 / 单元测试 / 第三方工具做交叉验证；**不得由 main 助手单方面自审**
 - 向用户说明审核 MCP 失败的原因和替代方案
 - **明确声明**："此次未经外部审核 MCP 审核"
 
@@ -380,14 +390,15 @@ docs/Task/
 ### 3. 阶段同步点
 
 `fullauto` 主 assistant 在每个阶段完成时按以下表格追加章节到 `docs/Task/Active/<TASK>_PLAN.md`：
+**所有 `<slug>/` 路径均指 `.omc/fullauto/` 子目录**（如 `<slug>/spec.md` ≡ `.omc/fullauto/<slug>/spec.md`）。
 
 | 信号 | 追加章节 | 引用路径 |
 |---|---|---|
-| `FULLAUTO_PHASE_0_COMPLETE` | `## 阶段 0 输出（spec）` | `<slug>/spec.md` |
-| `FULLAUTO_PHASE_1_COMPLETE` | `## 实施计划` + `## 外部审核意见（Phase 1）` | `fullauto-<slug>-impl.md` |
+| `FULLAUTO_PHASE_0_COMPLETE` | `## 阶段 0 输出（spec）` | `<slug>/spec.md`（→ `.omc/fullauto/<slug>/spec.md`） |
+| `FULLAUTO_PHASE_1_COMPLETE` | `## 实施计划` + `## 外部审核意见（Phase 1）` | `fullauto-<slug>-impl.md`（→ `.omc/plans/fullauto-<slug>-impl.md`） |
 | `FULLAUTO_PHASE_3_COMPLETE` | `## QA 记录` | — |
-| `FULLAUTO_PHASE_4_COMPLETE` | `## 验证` + `## 外部审核意见（Phase 4）` | `<slug>/validation.md` |
-| `FULLAUTO_COMPLETE` | 头部状态改 `✅ 已完成 (YYYY-MM-DD)` | — |
+| `FULLAUTO_PHASE_4_COMPLETE` | `## 验证` + `## 外部审核意见（Phase 4）` | `<slug>/validation.md`（→ `.omc/fullauto/<slug>/validation.md`） |
+| `FULLAUTO_COMPLETE` | 头部状态改 `✅ 已完成 (YYYY-MM-DD)` + 同步 `.omc/fullauto/INDEX.md` 与 `docs/Task/README.md` | — |
 
 ### 4. 外部审核顾问（不阻塞主流程）
 
@@ -425,6 +436,8 @@ Params:
 外部审核顾问角色定位：顾问 + 风险雷达。**不得**因 REJECTED 阻断 fullauto。
 
 #### 4.a v2.2 — 单文件粒度复审 + 计划联动（每 1 次修复 = 1 次 runReview 调）
+
+**豁免**：纯文档/配置/单行 typo 改动可豁免 `runReview`，由 main 助手自查并在 plan 留 stamp（`self-checked: <原因>`）。其他代码改动一律触发。
 
 除 §4 的 Phase 1/4 末 plan/validation 复审外，v2.2 起**每个文件**被修复后都触发一次 `runReview()` 复审：
 
@@ -476,6 +489,8 @@ Params:
 | 同一文件连续 REJECTED | ≤ 3 | 写 `qa-blocker.md`，stop |
 | 嵌入 prompt 体积 | ≤ 30k token | 已实测 210 字节 + 上下文远低于 30k；超出时把 BEFORE/AFTER 改为文件路径 + 行号引用 |
 
+**批量聚合下的 REJECTED 计数**：批量 prompt 内 N 个文件任一 REJECTED，phase 总数 +N；但 `qa-blocker` 仍按 §4.a 单文件连续 REJECTED 次数计，不与批量聚合叠加。
+
 #### 4.c v2.2 — Runtime Decisions 写入协议
 
 外部审核 verdict 写回 `.omc/plans/fullauto-<slug>-impl.md` 末尾的 `## Runtime Decisions` 段：
@@ -521,6 +536,7 @@ OMC git trailers（`Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / 
 
 清理前置：先在 `docs/Task/Archive/YYYY-MM/PRUNE_LOG.md` 追加一行：
 `YYYY-MM-DD HH:MM | <slug> | spec.md:<hash> | validation.md:<hash> | reason:<...>`
+其中 `<hash>` 取 `sha256(file_content)[:8]`（hex 前 8 位）。
 然后**才**删除 `.omc/fullauto/<slug>/` 整目录；同时从 INDEX.md 移除对应行。
 
 ### 7. /fullauto-prune 协议
