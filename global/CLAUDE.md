@@ -30,8 +30,9 @@
 |---|---|---|---|
 | 1 | 需求分析完、写实施计划前 | `requirement` | PLAN.md |
 | 2 | 实施计划完、开编码前 | `plan` | PLAN.md |
+| 3-pre | fullauto Phase 0 末（spec 落地） | `plan` | `## 外部审核意见（Phase 0）` |
 | 3 | fullauto Phase 1 末（plan 落地） | `plan` | `## 外部审核意见（Phase 1）` |
-| 4 | 单文件修复完成（fullauto §4.a 触发） | `code` | `## Runtime Decisions` |
+| 4 | 单文件修复完成（fullauto §4.a / 手工 §4.b 触发） | `code` | `## Runtime Decisions` |
 | 5 | fullauto Phase 4 末（validation 落地） | `plan` | `## 外部审核意见（Phase 4）` |
 
 **Provider 解析**（先命中先返回）：
@@ -358,203 +359,26 @@ docs/Task/
 
 ## /fullauto 协作约定
 
-`/fullauto`（`~/.claude/skills/fullauto/SKILL.md`）是零询问端到端 skill。
-本节规定它与本文件既有规范（任务文档生命周期、Codex 协作、提交模板）的衔接点。
+> **权威源迁移**：本节内容（任务分片、双索引、阶段同步点、§4 外部审核、§4.a-§4.c 单文件粒度、§4.d 手工模式 review、§5 commit 模板、§6/§7 清理协议、§8 零询问边界）已迁移至 `~/.claude/skills/fullauto/SKILL.md` 的 `## 协作约定` 节。
+>
+> **严禁在本文件维护此协议**——避免双份漂移。如需调整，请直接修改 SKILL.md，本节保持为指针。
+>
+> **强引导**：在任何 `/fullauto` 任务执行前，必须先 `Read ~/.claude/skills/fullauto/SKILL.md` 加载 `## 协作约定` 节（按需加载触发）。
 
-### 1. 任务分片与目录模型
+<!--
+原 §1-§8 全文（共 260 行）已迁移。摘要：
+- §1 任务分片与目录模型：每个任务独占 `<task-slug>/` 子目录，slug kebab-case ≤30 字符
+- §2 双索引职责：.omc/fullauto/INDEX.md ↔ docs/Task/README.md
+- §3 阶段同步点：FULLAUTO_PHASE_{0,1,3,4}_COMPLETE / FULLAUTO_COMPLETE 信号 → plan 章节
+- §4 外部审核顾问：Phase 1/4 末各调一次 runReview()，fallback coding-bridge → kimi
+- §4.a 单文件粒度复审：每个文件修复完成 = 1 次 runReview({kind:"code"})
+- §4.b 软上限：单 phase ≤ 8 次，同一文件连续 REJECTED ≤ 3 次
+- §4.c Runtime Decisions：verdict 写回 .omc/plans/fullauto-<slug>-impl.md 末尾
+- §4.d 手工模式：手工会话代码改动同样触发 runReview({kind:"code"})
+- §5 commit 模板：~/.claude/COMMIT_TEMPLATE.md + OMC trailers
+- §6 清理阈值：N=5 / T=30d，clean 前先写 PRUNE_LOG.md
+- §7 /fullauto-prune 协议：9 步流程
+- §8 零询问边界：<Autonomy_Directive> 永久生效，COMPLETE 后输出交付清单
 
-每个 fullauto 任务独占一个 `<task-slug>/` 子目录，slug 在 0-pre 阶段从 idea 生成：
-
-| 项 | 规则 |
-|---|---|
-| 字符 | kebab-case，小写字母/数字/连字符 |
-| 长度 | ≤30 字符 |
-| 冲突 | 已有同名目录 → 自动追加 `-2`、`-3` …，决策写入 `## Decisions Made` |
-| 保留名 | `INDEX` / `state` / `template` 触发 `-<n>` 后缀 |
-
-文件落点：
-- 运行时：`.omc/fullauto/INDEX.md` + `.omc/fullauto/<slug>/{state.json, spec.md, open-questions.md, validation.md, qa-blocker.md}`
-- 计划：`.omc/plans/fullauto-<slug>-impl.md`
-- 任务文档：`docs/Task/Active/<TASK>_PLAN.md` ↔ `docs/Task/Archive/YYYY-MM/<TASK>_PLAN.md`
-
-### 2. 双索引职责
-
-| 索引 | 角色 | 写入时机 |
-|---|---|---|
-| `.omc/fullauto/INDEX.md` | fullauto 运行时主索引 | 0-pre / 阶段完成 / 清理 |
-| `docs/Task/README.md` | 项目级人类可读索引 | 0-pre / 归档时 |
-
-两表在 0-pre 与 `FULLAUTO_COMPLETE` 两个点必须同步；其他时间允许临时漂移。
-漂移修正：fullauto 启动时若发现两表 slug 集合不一致 → 重建短表，补一行 `## 同步修正`。
-
-### 3. 阶段同步点
-
-`fullauto` 主 assistant 在每个阶段完成时按以下表格追加章节到 `docs/Task/Active/<TASK>_PLAN.md`：
-**所有 `<slug>/` 路径均指 `.omc/fullauto/` 子目录**（如 `<slug>/spec.md` ≡ `.omc/fullauto/<slug>/spec.md`）。
-
-| 信号 | 追加章节 | 引用路径 |
-|---|---|---|
-| `FULLAUTO_PHASE_0_COMPLETE` | `## 阶段 0 输出（spec）` | `<slug>/spec.md`（→ `.omc/fullauto/<slug>/spec.md`） |
-| `FULLAUTO_PHASE_1_COMPLETE` | `## 实施计划` + `## 外部审核意见（Phase 1）` | `fullauto-<slug>-impl.md`（→ `.omc/plans/fullauto-<slug>-impl.md`） |
-| `FULLAUTO_PHASE_3_COMPLETE` | `## QA 记录` | — |
-| `FULLAUTO_PHASE_4_COMPLETE` | `## 验证` + `## 外部审核意见（Phase 4）` | `<slug>/validation.md`（→ `.omc/fullauto/<slug>/validation.md`） |
-| `FULLAUTO_COMPLETE` | 头部状态改 `✅ 已完成 (YYYY-MM-DD)` + 同步 `.omc/fullauto/INDEX.md` 与 `docs/Task/README.md` | — |
-
-### 4. 外部审核顾问（不阻塞主流程）
-
-fullauto 在 Phase 1 末、Phase 4 末各调一次 `runReview()`，具体 provider 由 `REVIEW_PROVIDER` 解析。
-默认 `coding-bridge`（专用审核接口）；fallback 链 `coding-bridge → kimi`。
-
-```
-Tool: runReview()
-Params:
-  PROMPT: "Review the following <plan|validation> content. Output: (1) 3-7 risks; (2) unified diff patch of thinnest hardening; (3) APPROVED/REJECTED verdict; (4) no questions to user. ---\n<FILE_CONTENT>"
-  cd: <项目根>
-  kind: "plan"  ← Phase 1/4 末都是 plan
-  # codex provider: sandbox="read-only" / SESSION_ID: None / return_all_messages: True（Phase 1） 或 False（Phase 4）
-  # kimi / coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
-```
-
-**Provider 调用差异**：
-
-| Provider | 沙箱控制 | 严禁 | 备注 |
-|---|---|---|---|
-| `codex` | `sandbox="read-only"` | `model`（2026-06-08 503 事故）、`yolo` | 见下方事故复盘 |
-| `kimi` | PROMPT 文本约束 | — | fallback 第二档 |
-| `coding-bridge` | PROMPT 文本约束 | — | fallback 第一档 / 默认 |
-
-**事故复盘（2026-06-08）** —— codex 专属：
-在第一版草案里漏写"严禁 model"约束。两次 Codex 调用分别带 `model=sonnet` / `model=opus`，
-触发 503（提供商无对应模型）。第三次去掉 `model` 后顺利进入 turn，但流在解码阶段断连。
-教训：调 codex 前必须复读本表"严禁"列；本事故**不**适用于 kimi / coding-bridge。
-
-失败兜底（沿用本文件 §1.4 的 3 档）：
-1. 简化 prompt 重试（同 provider）
-2. 切到 fallback 链下一个 provider（coding-bridge → kimi）
-3. 放弃 → 在 PLAN.md 写 `## 外部审核：未参与（原因：<msg>）`，主流程不挂
-
-外部审核顾问角色定位：顾问 + 风险雷达。**不得**因 REJECTED 阻断 fullauto。
-
-#### 4.a v2.2 — 单文件粒度复审 + 计划联动（每 1 次修复 = 1 次 runReview 调）
-
-**豁免**：纯文档/配置/单行 typo 改动可豁免 `runReview`，由 main 助手自查并在 plan 留 stamp（`self-checked: <原因>`）。其他代码改动一律触发。
-
-除 §4 的 Phase 1/4 末 plan/validation 复审外，v2.2 起**每个文件**被修复后都触发一次 `runReview()` 复审：
-
-- **粒度**：单文件 = 1 次修复 = 1 次 runReview 调（不是合并 N 个文件）
-- **触发点**：
-  - Phase 2：executor 改完 1 个文件
-  - Phase 3：debugger 修完 1 个文件
-  - Phase 4：3 reviewer REJECT 后，executor 修完 1 个文件
-- **PROMPT 模板**（BEFORE/AFTER 嵌入，`kind="code"`）：
-  ```
-  Review the following single-file fix output.
-  Output: (1) 3-7 risks; (2) unified diff patch of thinnest hardening;
-  (3) APPROVED/REJECTED verdict; (4) no questions to user.
-
-  ## File
-  <绝对路径> (N lines, M bytes)
-
-  ## Phase
-  <2/3/4> — <executor/debugger/3-reviewer>
-
-  ## Fix context
-  <1-2 句：原 issue + 修了什么>
-
-  ## File content (BEFORE / AFTER)
-  ```python
-  # BEFORE
-  <原内容>
-  ```
-  ```python
-  # AFTER (当前状态)
-  <修复后内容>
-  ```
-
-  ## Previous review verdicts on this file
-  <如有：上一次 REJECTED + 修复方向>
-  ```
-- **verdict 处理**：
-  - APPROVED → 写 `## 外部审核复审 APPROVED` 段，进入下一文件
-  - REJECTED → 写 `## 外部审核复审 REJECTED` 段 + diff 写回 `.omc/plans/fullauto-<slug>-impl.md` 的 `## Runtime Decisions` 段；下一文件执行前**必须 Read** 该段
-  - 失败 → 写 `## 外部审核：未参与` 段，主流程不挂
-- **不阻塞**（与 §4 一致）：REJECTED 不阻断主流程，但 plan 留下印记，下一文件必须 Read
-- **死循环防护**：同一文件连续 3 次 REJECTED → 写 `.omc/fullauto/<slug>/qa-blocker.md`，触发 stop condition
-
-#### 4.b v2.2 — 软上限与批量聚合
-
-| 维度 | 上限 | 超限处理 |
-|---|---|---|
-| 单 phase 内 runReview 调用次数 | ≤ 8 | 后续文件走"批量聚合 prompt"模式（多个 BEFORE/AFTER 拼一段） |
-| 同一文件连续 REJECTED | ≤ 3 | 写 `qa-blocker.md`，stop |
-| 嵌入 prompt 体积 | ≤ 30k token | 已实测 210 字节 + 上下文远低于 30k；超出时把 BEFORE/AFTER 改为文件路径 + 行号引用 |
-
-**批量聚合下的 REJECTED 计数**：批量 prompt 内 N 个文件任一 REJECTED，phase 总数 +N；但 `qa-blocker` 仍按 §4.a 单文件连续 REJECTED 次数计，不与批量聚合叠加。
-
-#### 4.c v2.2 — Runtime Decisions 写入协议
-
-外部审核 verdict 写回 `.omc/plans/fullauto-<slug>-impl.md` 末尾的 `## Runtime Decisions` 段：
-
-```markdown
-## Runtime Decisions
-
-### File: <绝对路径>
-- fix-N: <一句话描述> (Phase <X>, <ISO 时间>, provider=<codex|kimi|coding-bridge>)
-  - Review verdict: <APPROVED/REJECTED/未参与>
-  - Review issues: <3-7 risks 摘要>
-  - 调整: <外部审核建议 + main 助手采纳的部分>
-  - 下次执行: must Read this section before modifying <file>
-```
-
-写入由 **main fullauto 助手** 串行化执行（不交给子代理，避免并发写竞争）。
-
-### 5. 提交模板统一
-
-`~/.claude/COMMIT_TEMPLATE.md` 是唯一权威模板。
-OMC git trailers（`Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / `Scope-risk:` / `Not-tested:`）
-以引言块形式放入 body 末尾：
-
-```
-> OMC trailers:
-> Constraint: <...>
-> Rejected: <alt> | <reason>
-> ...
-```
-
-归档动作（move + 双 README 同步 + 删除 state.json）本身按这份模板走一次 commit。
-
-### 6. 清理已完成 slug
-
-| 触发方式 | 行为 |
-|---|---|
-| `/fullauto-prune`（手动） | 见 §7 |
-| 每次 `FULLAUTO_COMPLETE` | **不**自动清理；只在 INDEX.md 标 `complete` |
-
-清理阈值（两者取更严）：
-- `N = 5` 个最近 `complete` slug
-- `T = 30` 天未访问
-
-清理前置：先在 `docs/Task/Archive/YYYY-MM/PRUNE_LOG.md` 追加一行：
-`YYYY-MM-DD HH:MM | <slug> | spec.md:<hash> | validation.md:<hash> | reason:<...>`
-其中 `<hash>` 取 `sha256(file_content)[:8]`（hex 前 8 位）。
-然后**才**删除 `.omc/fullauto/<slug>/` 整目录；同时从 INDEX.md 移除对应行。
-
-### 7. /fullauto-prune 协议
-
-入口：用户输入 `/fullauto-prune [N=5] [T=30d]`。
-1. 读 `.omc/fullauto/INDEX.md`，筛选 `status: complete` 的行
-2. 与磁盘 `.omc/fullauto/<slug>/` 目录存在性对账：缺失 → 标记为 `drift`，不清理
-3. 排序：mtime 降序；**mtime 取 `<slug>/` 目录下 `spec.md` 的 mtime**（最稳定，代表任务"最近活跃"信号）；保留前 N=5，其余进入候选
-4. 候选中 mtime > T 天的全部进入清理队列
-5. 候选中 mtime ≤ T 天的保留（用户可调小 N 触发）
-6. 写入 `docs/Task/Archive/YYYY-MM/PRUNE_LOG.md`
-7. 删除 `INDEX.md` 中对应行
-8. 删除磁盘 `<slug>/` 目录
-9. 输出 1 段总结：清理数量、保留数量、drift 数量
-
-### 8. 与"零询问"的边界
-
-fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
-但 `FULLAUTO_COMPLETE` 之后 assistant 输出一段"交付清单"（非阻塞），
-包含：归档路径、git status 建议命令、Codex 顾问状态、清理建议触发词。
-用户**主动**决定下一步；不构成反问。
+详见 SKILL.md 行 244-506。
+-->
