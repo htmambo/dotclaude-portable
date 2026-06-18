@@ -312,7 +312,7 @@ do_doctor() {
 
 do_install_pre_push() {
   local hook="${REPO_ROOT}/.git/hooks/pre-push"
-  local script="#!/usr/bin/env bash\nset -e\nREPO_ROOT=\"\$(cd -- \"\$(dirname -- \"\${BASH_SOURCE[0]}\")/..\" &>/dev/null && pwd)\"\npython3 \"\${REPO_ROOT}/tools/scan-secrets.py\" \"\${REPO_ROOT}\" || { echo '[pre-push] secret detected; abort' >&2; exit 1; }\n"
+  local script="#!/usr/bin/env bash\nset -e\nREPO_ROOT=\"\$(cd -- \"\$(dirname -- \"\${BASH_SOURCE[0]}\")/../..\" &>/dev/null && pwd)\"\npython3 \"\${REPO_ROOT}/tools/scan-secrets.py\" \"\${REPO_ROOT}\" || { echo '[pre-push] secret detected; abort' >&2; exit 1; }\n"
   log "installing pre-push hook -> $hook"
   if [[ $DRY_RUN -eq 1 ]]; then
     return

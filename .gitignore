@@ -3,6 +3,9 @@
 *.tmp
 .DS_Store
 Thumbs.db
+__pycache__/
+*.pyc
+*.pyo
 
 # harness runtime that may bleed into repo root
 .omc

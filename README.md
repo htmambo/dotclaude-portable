@@ -1,5 +1,10 @@
 # dotclaude-portable
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./VERSION)
+[![CI](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml/badge.svg)](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/htmambo/dotclaude-portable)](https://github.com/htmambo/dotclaude-portable/releases)
+
 便携式同步 `~/.claude/` 中"机器无关"的配置：纯文本规则、commit 模板、commands、skills，以及 3 个**不含 secret** 的 JSON 配置（含 `.mcp.json`）。换机器后 **clone + 一行命令** 即可恢复。
 
 ## 5 分钟上手

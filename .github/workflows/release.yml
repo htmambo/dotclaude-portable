@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: read version
+        id: ver
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$tag" == v* ]]; then
+            ver="${tag#v}"
+          else
+            ver="$(cat VERSION | tr -d '\n')"
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: extract changelog
+        id: cl
+        run: |
+          ver="${{ steps.ver.outputs.version }}"
+          # 提取 ## [$ver] 段到下一个 ## [ 或 EOF
+          awk -v v="$ver" '
+            BEGIN { cap=0 }
+            /^## \[/ { if (cap) exit; if (index($0, "[" v "]")) { cap=1; print; next } }
+            cap { print }
+          ' CHANGELOG.md > /tmp/cl.md
+          if [[ ! -s /tmp/cl.md ]]; then
+            echo "WARN: no CHANGELOG entry for $ver; using full file" >&2
+            cp CHANGELOG.md /tmp/cl.md
+          fi
+          echo "cl_path=/tmp/cl.md" >> "$GITHUB_OUTPUT"
+
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          body_path: ${{ steps.cl.outputs.cl_path }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(steps.ver.outputs.tag, '-') }}
