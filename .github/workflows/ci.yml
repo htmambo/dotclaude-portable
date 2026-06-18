@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: install/check/doctor/uninstall (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: show env
+        shell: bash
+        run: |
+          echo "runner.os=${{ runner.os }}"
+          bash --version | head -1
+          python3 --version
+
+      - name: dry-run (no side effects)
+        shell: bash
+        run: ./install.sh --dry-run
+
+      - name: doctor (scan-secrets on repo)
+        shell: bash
+        run: ./install.sh doctor
+
+      - name: install to fake HOME
+        shell: bash
+        env:
+          HOME_DIR: ${{ runner.temp }}/fake-home
+        run: |
+          mkdir -p "$HOME_DIR"
+          HOME="$HOME_DIR" ./install.sh --force
+
+      - name: check after install
+        shell: bash
+        env:
+          HOME_DIR: ${{ runner.temp }}/fake-home
+        run: |
+          HOME="$HOME_DIR" ./install.sh --check
+
+      - name: rollback to slot 1
+        shell: bash
+        env:
+          HOME_DIR: ${{ runner.temp }}/fake-home
+        run: |
+          HOME="$HOME_DIR" ./install.sh --rollback 1 || true   # slot 1 = first install snapshot
+          HOME="$HOME_DIR" ./install.sh --check || true
+
+      - name: uninstall
+        shell: bash
+        env:
+          HOME_DIR: ${{ runner.temp }}/fake-home
+        run: |
+          HOME="$HOME_DIR" ./install.sh --uninstall
+
+      - name: standalone scan-secrets on repo
+        shell: bash
+        run: python3 tools/scan-secrets.py .

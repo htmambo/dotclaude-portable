@@ -1,0 +1,14 @@
+{
+  "name": "TestUser",
+  "model_preference": "opus",
+  "ui": {
+    "theme": "dark",
+    "font_size": 14,
+    "auto_compact_pct": 80
+  },
+  "short_ids": {
+    "session": "abc123",
+    "uuid": "550e8400-e29b-41d4-a716-446655440000"
+  },
+  "comment": "this should be clean: ghp_short_too_brief_for_30_chars"
+}

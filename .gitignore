@@ -1,0 +1,35 @@
+# runtime / transient
+*.bak.*
+*.tmp
+.DS_Store
+Thumbs.db
+
+# harness runtime that may bleed into repo root
+.omc
+.omc/
+*.swp
+*.swo
+*~
+.cache/
+
+# === Secret / token defense-in-depth ===
+# 1) Blacklist all JSON in global/json/ (the only JSON dir we own)
+global/json/*
+# 2) Whitelist *.base.json (these are the only JSON allowed in repo)
+!global/json/*.base.json
+
+# 3) Blocklist every known secret-bearing filename pattern
+**/kimi*.json
+**/minimax*.json
+**/anyrouter*.json
+**/baidu*.json
+**/selfminimax.json
+**/mcp-needs-auth-cache.json
+**/*-token*.json
+**/settings*.json
+**/provider*.json
+**/.omc-config*.json
+
+# 4) Backup / cache dirs we never want
+backups/
+~/.claude.backups/
