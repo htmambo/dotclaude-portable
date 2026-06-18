@@ -5,6 +5,7 @@
 
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [install-memory-mcp 子命令](Archive/2026-06/INSTALL_MCP_MEMORY_FIX_PLAN.md) - 完成于 2026-06-19
 - ✅ [review-watchdog hook 文档同步](Archive/2026-06/REVIEW_WATCHDOG_DOCS_PLAN.md) - 完成于 2026-06-19
 - ✅ [global/CLAUDE.md 英文化](Archive/2026-06/CLAUDE_MD_ENGLISH_PLAN.md) - 完成于 2026-06-19
 - ✅ [CLAUDE.md 审核修复](Archive/2026-06/CLAUDE_MD_REVIEW_FIX_PLAN.md) - 完成于 2026-06-19

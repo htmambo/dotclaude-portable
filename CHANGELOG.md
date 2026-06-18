@@ -13,6 +13,7 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
   - If none detected → emits a stderr advisory (`exit 0`, non-blocking)
   - Skips: paths under `docs/` or `.omc/`, and any `*.md` / `*.markdown` file
   - Auto-deploy: `install.sh`'s `HOOK_FILES` dynamically discovers `hooks/*.mjs` / `hooks/*.sh` (no MAP change required)
+- `install.sh` subcommand `install-memory-mcp`: auto-patch `~/.claude/.mcp.json` to set `MEMORY_FILE_PATH=$HOME/.claude/memory/memory.jsonl`, fixing `@modelcontextprotocol/server-memory` v0.6.3's default-storage-in-npx-cache-dir issue (data not shared across processes / restarts). Idempotent, supports `--dry-run`, one-time `.bak` of `mcp.json`
 - Doc sync: `README.md` / `docs/Analysis/INVENTORY.md` / `docs/Architecture/SYSTEM_DESIGN.md` / `docs/Usage/{INSTALL,UPGRADE}.md` updated from "9 hooks pending V0.3" to actual state
 
 ## [1.0.0] - 2026-06-18

@@ -28,6 +28,7 @@ cd dotclaude-portable
 
 # 5. 跨机器补全
 ./install.sh install-statusline   # 把 ccstatusline-zh 注入本机 settings.json
+./install.sh install-memory-mcp   # 修复 MCP memory 持久化路径
 ./scripts/setup-plugins.sh        # 装 3 marketplace + 7 plugin
 ```
 

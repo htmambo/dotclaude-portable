@@ -11,6 +11,7 @@
 #   ./install.sh --check         # symlink 健康巡检
 #   ./install.sh --rollback N    # 回滚到第 N 个备份
 #   ./install.sh install-pre-push  # 在 .git/hooks/pre-push 安装 secret 拦截
+#   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -34,6 +35,7 @@ while [[ $# -gt 0 ]]; do
     --rollback)      ACTION="rollback"; ROLLBACK_N="${2:-1}"; shift 2 ;;
     install-pre-push) ACTION="install-pre-push"; shift ;;
     install-statusline) ACTION="install-statusline"; shift ;;
+    install-memory-mcp) ACTION="install-memory-mcp"; shift ;;
     -h|--help)
       sed -n '2,15p' "$0" | sed 's/^# \?//'
       exit 0
@@ -382,6 +384,59 @@ for p in sys.argv[1].split():
   log "statusLine merged"
 }
 
+do_install_memory_mcp() {
+  # 修复 @modelcontextprotocol/server-memory 默认存储到 npx 缓存目录
+  # （每次启动路径不同，跨进程不共享）的问题：
+  # 强制写 MEMORY_FILE_PATH 到 $HOME/.claude/memory/memory.jsonl 绝对路径
+  # 幂等：已正确配置则直接 return 0；首次写时备份 mcp.json 为 .bak
+  local mcp_config="$HOME/.claude/.mcp.json"
+  local mem_dir="$HOME/.claude/memory"
+  local mem_file="$mem_dir/memory.jsonl"
+
+  [[ -d "$mem_dir" ]] || { mkdir -p "$mem_dir" || { err "mkdir failed: $mem_dir"; exit 1; }; }
+
+  # 已配置？检查现有 MEMORY_FILE_PATH 是否等于目标值
+  if [[ -f "$mcp_config" ]] && python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+mem = d.get('mcpServers', {}).get('memory', {})
+target = sys.argv[2]
+sys.exit(0 if mem.get('env', {}).get('MEMORY_FILE_PATH') == target else 1)
+" "$mcp_config" "$mem_file" 2>/dev/null; then
+    log "memory MCP already configured: $mem_file"
+    return 0
+  fi
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log "[dry-run] would patch $mcp_config: set MEMORY_FILE_PATH=$mem_file"
+    return 0
+  fi
+
+  # 一次性备份
+  [[ -f "$mcp_config" && ! -f "${mcp_config}.bak" ]] \
+    && cp "$mcp_config" "${mcp_config}.bak" \
+    && log "backed up: ${mcp_config}.bak"
+
+  # Python 深合并：保留其他 server 段不动；只补 mcpServers.memory.env
+  python3 - "$mcp_config" "$mem_file" <<'PYEOF' || { err "patch failed: $mcp_config"; exit 1; }
+import json, sys
+path, target = sys.argv[1], sys.argv[2]
+try:
+    d = json.load(open(path))
+except (FileNotFoundError, json.JSONDecodeError):
+    d = {}
+d.setdefault("mcpServers", {}).setdefault("memory", {})
+mem = d["mcpServers"]["memory"]
+mem.setdefault("command", "npx")
+mem.setdefault("args", ["-y", "@modelcontextprotocol/server-memory"])
+mem.setdefault("env", {})["MEMORY_FILE_PATH"] = target
+json.dump(d, open(path, "w"), indent=2, ensure_ascii=False)
+PYEOF
+
+  log "memory MCP configured: MEMORY_FILE_PATH=$mem_file"
+  warn "restart Claude Code to activate new config"
+}
+
 case "$ACTION" in
   install)         do_install ;;
   uninstall)       do_uninstall ;;
@@ -390,4 +445,5 @@ case "$ACTION" in
   rollback)        do_rollback ;;
   install-pre-push) do_install_pre_push ;;
   install-statusline) do_install_statusline ;;
+  install-memory-mcp) do_install_memory_mcp ;;
 esac

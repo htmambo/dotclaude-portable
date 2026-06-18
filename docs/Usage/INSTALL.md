@@ -25,6 +25,7 @@ cd dotclaude-portable
 | `./install.sh --rollback N` | 回滚到第 N 个备份（1=最新，2=上上次，3=再上上次） |
 | `./install.sh doctor` | secret 扫描 |
 | `./install.sh install-pre-push` | 在 .git/hooks/pre-push 装拦截器（已自动） |
+| `./install.sh install-memory-mcp` | 修复 MCP memory server 持久化路径（跨机器必跑） |
 | `./tests/ci/smoke.sh` | 跑完整 6 步 CI 模拟（用临时 HOME，不污染本机） |
 
 ## 工作流
@@ -54,6 +55,20 @@ cd dotclaude-portable
 - 当前 1 个：`hooks/review-watchdog.mjs`（PostToolUse hook，代码改动无 `runReview` 时 stderr 提示）
 - 新增 hook：把文件放进 `hooks/` 目录，重跑 `./install.sh`，无需改 `install.sh` MAP
 - 验证：`./install.sh --check` 校验 `~/.claude/hooks/` 下所有 hook 文件的健康（symlink 健在）
+
+## MCP memory 修复
+
+`@modelcontextprotocol/server-memory` v0.6.3 默认把图谱存到 `npx` 缓存目录（每次启动路径不同），导致跨进程/跨会话不共享。修复：
+
+```bash
+./install.sh install-memory-mcp   # 幂等；已配则直接 return 0
+```
+
+行为：
+- 检查 `~/.claude/.mcp.json` 中 `memory` server 是否已配 `MEMORY_FILE_PATH=$HOME/.claude/memory/memory.jsonl`
+- 缺失则用 Python 深合并补上（保留其他 server 段不动）
+- 一次性备份 `mcp.json` 为 `.bak`
+- 跑完后**重启 Claude Code** 让新配置生效
 
 ## CI 验证
 
