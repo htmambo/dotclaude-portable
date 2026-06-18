@@ -47,6 +47,14 @@ cd dotclaude-portable
 - Windows 7+ 默认 `--copy` 模式（脚本通过 `uname -s` 检测 `MINGW*`/`MSYS*`/`CYGWIN*`）
 - 想用 symlink 需开启 **Developer Mode** + 用 git-bash 内 `ln -s`（可能仍受限）
 
+## Hook 部署
+
+`hooks/` 目录下的所有 `*.mjs` / `*.sh` 文件会被 `./install.sh` 自动发现并部署为 symlink：
+
+- 当前 1 个：`hooks/review-watchdog.mjs`（PostToolUse hook，代码改动无 `runReview` 时 stderr 提示）
+- 新增 hook：把文件放进 `hooks/` 目录，重跑 `./install.sh`，无需改 `install.sh` MAP
+- 验证：`./install.sh --check` 校验 `~/.claude/hooks/` 下所有 hook 文件的健康（symlink 健在）
+
 ## CI 验证
 
 GitHub Actions 工作流位于 `.github/workflows/ci.yml`，在 push/PR 时自动跑：

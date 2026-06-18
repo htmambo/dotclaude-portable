@@ -112,6 +112,11 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 
 完整决策表见 `docs/Analysis/INVENTORY.md`。
 
+### Hooks (1 已落地)
+
+- `hooks/review-watchdog.mjs` — PostToolUse hook；`Write|Edit` 触及代码文件但本轮未调 `runReview` 时 stderr 提示（`exit 0`，非阻塞）
+- Auto-deploy：`./install.sh` 通过 `HOOK_FILES` 动态扫描 `hooks/*.mjs` / `hooks/*.sh`，无需在 MAP 中注册；`--check` 校验 symlink 健在
+
 ## 安全防御
 
 1. `.gitignore` 黑名单 + 白名单：`global/json/*` 全屏蔽，例外 `*.base.json`；模式化屏蔽 `**/settings*.json` / `**/provider*.json` / `**/.omc-config*.json` 等
@@ -134,6 +139,7 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 
 - `.github/workflows/ci.yml`：Ubuntu 跑 dry-run / doctor / install / check / rollback / uninstall / scan-secrets
 - `./tests/ci/smoke.sh`：本地复现 CI（用 FAKE_HOME 隔离，不污染本机 `~/.claude`）
+- hooks：`HOOK_FILES` 自动从 `hooks/` 目录发现 `*.mjs` / `*.sh`，无需在 `install.sh` 注册
 
 ## Windows
 

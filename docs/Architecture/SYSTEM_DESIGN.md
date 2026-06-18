@@ -68,7 +68,7 @@ dotclaude-portable/
 │       └── statusline.base.json        # ccstatusline-zh@2.2.20（已锁定）
 ├── commands/                # user slash commands
 ├── skills/                  # user skills
-├── hooks/                   # 占位（V0.3 视情况填充）
+├── hooks/                   # review-watchdog.mjs（PostToolUse hook, 已落地）
 └── docs/
     ├── Analysis/INVENTORY.md    # 同步/不同步决策表
     ├── Usage/{INSTALL,UPGRADE}.md
@@ -128,6 +128,6 @@ GitHub Actions 在 push / PR 时跑：
 
 ## 已知限制
 
-- 9 个 hook 脚本待 V0.3 从历史快照恢复
+- 其他 hook 暂未同步（待从历史快照或 OMC 备份恢复，或按需补齐）；当前 `review-watchdog.mjs` 已落地
 - macOS 未实测
 - fish / nushell 用户需自行处理 shell profile 注入

@@ -4,6 +4,17 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [1.0.4] - 2026-06-19
+
+### Added
+
+- `hooks/review-watchdog.mjs` (96 lines): PostToolUse hook listening on Write|Edit tools
+  - When a code file (`.py` `.ts` `.js` `.tsx` `.jsx` `.go` `.rs` `.java` `.kt` `.swift` `.c` `.cpp` `.h` `.sh` `.sql`, plus `pyproject.toml` / `package.json` / `Cargo.toml` / `go.mod` / `tsconfig.json` / `requirements.txt` / `Pipfile`) is touched, scans the current session transcript for `runReview` / `review_code` / `review_plan` / `mcp__coding-bridge__` references
+  - If none detected → emits a stderr advisory (`exit 0`, non-blocking)
+  - Skips: paths under `docs/` or `.omc/`, and any `*.md` / `*.markdown` file
+  - Auto-deploy: `install.sh`'s `HOOK_FILES` dynamically discovers `hooks/*.mjs` / `hooks/*.sh` (no MAP change required)
+- Doc sync: `README.md` / `docs/Analysis/INVENTORY.md` / `docs/Architecture/SYSTEM_DESIGN.md` / `docs/Usage/{INSTALL,UPGRADE}.md` updated from "9 hooks pending V0.3" to actual state
+
 ## [1.0.0] - 2026-06-18
 
 ### Added
@@ -42,6 +53,7 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 ### Known Limitations
 
 - 9 个 hook 脚本暂未同步（`hooks/` 仅有占位）—— 本机 `~/.claude/hooks/` 已被清理，源文件待 V0.3 从历史快照恢复
+  _(已部分解决：见 [1.0.4] `review-watchdog.mjs` 落地)_
 - macOS 未实测
 - 本机 shell profile 注入靠 `~/.bashrc` / `~/.zshrc`，fish / nushell 用户需自行处理
 
@@ -85,6 +97,7 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 
 - pre-push hook `REPO_ROOT` 路径计算少一层 `..` 的 bug（`/..` → `/../..`）
 
+[1.0.4]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.4
 [1.0.3]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.3
 [1.0.2]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.2
 [1.0.1]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.1

@@ -21,11 +21,12 @@
 | `global/json/.omc-version.base.json` | `.omc-version.json` | ✅ 渲染 cp | 纯版本号无 secret |
 | `global/json/statusline.base.json` | `settings.json` 的 `statusLine` 字段 | ✅ `install.sh install-statusline` 合并 | statusLine 是 npx 命令无 secret；**仅深度合并 statusLine 字段**，本机其他 settings 字段（含 sk- token）原样保留不被覆盖 |
 
-## 同步：hooks（占位，V0.3 视情况填充）
+## 同步：hooks（1 个已落地）
 
 | 仓库路径 | 源 | 决策 | 理由 |
 |---|---|---|---|
-| `hooks/` | `~/.claude/hooks/*` | ⏳ V0.3 | 2026-06-18 实测：本机 `~/.claude/hooks/` 已被 OMC 清理，无源文件可复制；9 个 hook 的 install/uninstall 路径在 `install.sh` 已实现，待从 OMC 备份或历史快照恢复 |
+| `hooks/review-watchdog.mjs` | `~/.claude/hooks/review-watchdog.mjs` | ✅ symlink | PostToolUse hook，监听 `Write|Edit` 工具；触及代码文件（`.py` `.ts` `.js` `.go` `.rs` 等）但本轮 session transcript 未检测到 `runReview` 时 stderr 提示（exit 0，非阻塞） |
+| `hooks/.gitkeep` | — | 占位 | 保持 `hooks/` 目录在 git 中存在；后续 hook 添加无需 `mkdir` |
 
 ## 跨机器补全（不入仓，但跨机器需要跑）
 
@@ -34,6 +35,7 @@
 | 4 个 MCP | (无脚本，npx 自动) | `context7` / `filesystem` / `mcp-deepwiki` / `memory` 全部用 `npx -y <pkg>` 启动，首次启动时 npx 自动下载 |
 | `ccstatusline-zh` | `./install.sh install-statusline` | 把 `global/json/settings.statusline.base.json` 合并到本机 `settings.json`；不污染 env / permissions 等含 token 字段 |
 | 7 个 plugin | `./scripts/setup-plugins.sh` | 3 marketplace + 7 plugin 跨机器一次装齐；维护在 `scripts/setup-plugins.sh` 顶部 `PLUGINS=(...)` 与 `MARKETPLACES=(...)` |
+| hooks | `./install.sh` 自动部署 | `HOOK_FILES` 动态扫描 `hooks/*.mjs` / `hooks/*.sh`；当前 1 个：`review-watchdog.mjs` |
 
 ### 7 个 plugin 清单
 
@@ -100,7 +102,7 @@
 
 ## V0.3+ 待办
 
-- 9 个 hook 实际源文件（待从 OMC 备份或历史快照恢复）
+- 其他 hook 源文件（按需补齐；当前 `review-watchdog.mjs` 已落地，详见 CHANGELOG 1.0.4）
 - macOS 实测
 - GitHub Releases 自动发版
 - hook 行为改写（路径变量化）

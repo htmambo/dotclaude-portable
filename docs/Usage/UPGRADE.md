@@ -5,7 +5,7 @@
 ### 新增能力
 
 - `global/json/*.base.json` —— 3 个 base JSON 入仓
-- `hooks/.gitkeep` —— 占位文件；9 个 hook 待 V0.3 从历史快照恢复
+- `hooks/.gitkeep` —— 占位文件；当前 1 个 hook 已落地（`review-watchdog.mjs`，详见 CHANGELOG 1.0.4）
 - `tools/scan-secrets.py` —— Python 写的 secret 扫描器
 - `tests/fixtures/` —— 正/负样本（假 token + 干净样本）
 - `.github/workflows/ci.yml` —— GitHub Actions CI
