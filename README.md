@@ -38,6 +38,38 @@ cd dotclaude-portable
 ./install.sh --rollback 1 # 1=最新，2=上一个，3=再上一个
 ```
 
+## ⚠️ 已知冲突：OMC 与本仓库的 `CLAUDE.md`
+
+**问题**：`oh-my-claudecode` (OMC) 的 `omc-setup` / `omc-doctor` / 某些 slash command 会**直接 patch `~/.claude/CLAUDE.md`**（用 OMC 自己的模板覆盖）。本仓库把 `~/.claude/CLAUDE.md` 当作 `global/CLAUDE.md` 的 symlink 托管 —— **OMC 会把 symlink 替换成普通文件，覆盖你的全局指令**。
+
+**冲突表现**：
+- symlink 被破坏（OMC 写文件时删了 symlink）
+- 本机 `~/.claude/CLAUDE.md` 不再跟仓库同步
+- `git pull` 后 symlink 重建，**会丢失 OMC 注入的额外规则**
+
+**解决方案**：
+
+```bash
+# 1. 先 install（建立 symlink）再装 OMC，让 OMC 知道"这个文件已托管"
+./install.sh
+./scripts/setup-plugins.sh        # 这一步会装 oh-my-claudecode
+
+# 2. OMC 装完后如果 symlink 被破坏：
+./install.sh --force               # 重建 symlink
+git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
+
+# 3. 想知道 OMC 装完后改了哪些文件：
+./install.sh --check               # symlink 健康巡检
+```
+
+**经验法则**：
+- **先 `install.sh` → 再 `setup-plugins.sh`**（顺序不能反）
+- 装完 OMC 之后**立即** `./install.sh --check` 验证 symlink 健在
+- 不要直接编辑 `~/.claude/CLAUDE.md`（它是 symlink，本地编辑会落到 symlink 自身，git pull 后丢失）
+- 想编辑全局指令 → 改仓库 `global/CLAUDE.md` → `git push` → 跨机器自然同步
+
+**对比 superpowers**：superpowers 极简（14 skill, 2.4 MB，**不**改 `CLAUDE.md`），无此问题。详见 [`docs/Analysis/SUPERPOWERS_VS_OMC.md`](./docs/Analysis/SUPERPOWERS_VS_OMC.md)。
+
 ## 同步范围（清理后）
 
 | 仓库路径 | 落点（相对 `~/.claude/`） | 类型 |

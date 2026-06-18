@@ -80,6 +80,24 @@
 - `tests/fixtures/`：维护正/负样本（假 token + 干净样本）
 - `.gitignore` 黑名单 + 白名单：防止 `cp` 误入
 
+## 已知冲突：OMC ↔ dotclaude-portable
+
+**冲突点**：`oh-my-claudecode` 的 `omc-setup` / `omc-doctor` / 部分 slash command 会**直接 patch `~/.claude/CLAUDE.md`**，把本仓库的 symlink 替换成普通文件，破坏跨机器同步。
+
+**完整对比与解决方案**：见 `docs/Analysis/SUPERPOWERS_VS_OMC.md` 与 `README.md` 的"已知冲突"section。
+
+**缓解**（已建议但未自动化）：
+- 顺序：`./install.sh` → `./scripts/setup-plugins.sh`（不能反）
+- 装完 OMC 后立即 `./install.sh --check` 验证 symlink 健在
+- 未来可加：`setup-plugins.sh` 装完 OMC 后自动 `install.sh --force` 重建 symlink
+
+**未受影响的 plugin**：
+- `superpowers`（极简，不改 CLAUDE.md）✅
+- `frontend-design` / `code-review` / 3 个 LSP / `context7` ✅
+
+**受影响的 plugin**：
+- `oh-my-claudecode@omc` ⚠️
+
 ## V0.3+ 待办
 
 - 9 个 hook 实际源文件（待从 OMC 备份或历史快照恢复）

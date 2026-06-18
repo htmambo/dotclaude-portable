@@ -45,4 +45,47 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 - macOS 未实测
 - 本机 shell profile 注入靠 `~/.bashrc` / `~/.zshrc`，fish / nushell 用户需自行处理
 
+## [1.0.3] - 2026-06-18
+
+### Documentation
+
+- 文档化已知冲突：OMC `omc-setup` 会 patch `~/.claude/CLAUDE.md`，破坏本仓库的 symlink
+- `README.md` 加 "已知冲突：OMC 与本仓库的 `CLAUDE.md`" section，含解决方案（先 install 后 setup-plugins / 装完立即 --check）
+- `docs/Analysis/INVENTORY.md` 加"已知冲突"段，标记受影响的 plugin
+- 引用 `docs/Analysis/SUPERPOWERS_VS_OMC.md`（v1.0.1 已加）
+
+### Background
+
+基于本机实测 superpowers 6.0.2（2.4 MB / 14 skill / 201 文件）vs OMC 4.14.6（373 MB / 41 skill / 19 agent / 17k 文件）的对比分析。OMC 是多 agent 执行框架，体积大、侵入性强；superpowers 是方法论库，体积小、不改 `CLAUDE.md`。
+
+## [1.0.2] - 2026-06-18
+
+### Security
+
+- `install.sh` `do_install_statusline` 应用 v3 外部审核 4 项修复：
+  - mkdir 失败 → exit 1（之前静默继续，可能破坏悬空 symlink）
+  - 损坏 JSON → FATAL abort（之前降级为 `{}` 覆盖原文件）
+  - npx 包名提取用 Python 替代 `echo | awk`（消除命令注入面）
+  - 备份时间戳用 Python `datetime`（跨 BSD date 兼容）
+- 原子写：`os.replace(tmp, target)` 防断电导致 settings.json 损坏
+- 驳回 v3 外部审核的 P2.5 建议（屏蔽 `tests/fixtures/secret-samples.json`）：该文件是负样本必须保留
+
+## [1.0.1] - 2026-06-18
+
+### Added
+
+- 社区标准文件：`LICENSE` (MIT) / `CHANGELOG.md` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md`
+- GitHub templates：`.github/ISSUE_TEMPLATE/{bug_report,feature_request}.md` + `PULL_REQUEST_TEMPLATE.md`
+- `.github/workflows/release.yml`：tag `v*` 触发，自动从 CHANGELOG 提取对应版本段生成 release notes
+- `docs/Architecture/SYSTEM_DESIGN.md`：模块图 / 红线 / 备份 / 限制
+- README badges：License / Version / CI / Release
+- `.gitignore` 加 `__pycache__/` 屏蔽 Python 编译产物
+
+### Fixed
+
+- pre-push hook `REPO_ROOT` 路径计算少一层 `..` 的 bug（`/..` → `/../..`）
+
+[1.0.3]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.3
+[1.0.2]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.2
+[1.0.1]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.1
 [1.0.0]: https://github.com/htmambo/dotclaude-portable/releases/tag/v1.0.0
