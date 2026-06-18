@@ -334,23 +334,31 @@ do_install_statusline() {
     log "[dry-run] would merge: $(cat "$base")"
     return
   fi
-  mkdir -p "$TARGET_HOME"
+  mkdir -p "$TARGET_HOME" || { err "mkdir failed: $TARGET_HOME"; exit 1; }
   # 备份（只对真文件备份；symlink 跳过——symlink 覆盖由外层处理）
   if [[ -f "$target" && ! -L "$target" ]]; then
-    cp -a "$target" "${target}.bak.$(date -u +%Y%m%d_%H%M%S)" || err "backup failed"
+    local ts
+    ts="$(python3 -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S"))')"
+    cp -a "$target" "${target}.bak.${ts}" || { err "backup failed"; exit 1; }
   fi
   # 仅深度合并 statusLine 字段
+  # 原子写：先写 .tmp，再 rename()，防止中断导致 settings.json 损坏
   python3 - "$base" "$target" <<'PYEOF'
-import json, sys
+import json, os, sys
 with open(sys.argv[1]) as f: base = json.load(f)
 try:
     with open(sys.argv[2]) as f: tgt = json.load(f)
-except Exception:
+except FileNotFoundError:
     tgt = {}
+except json.JSONDecodeError as e:
+    print(f"FATAL: invalid JSON in {sys.argv[2]}: {e}", file=sys.stderr)
+    sys.exit(1)
 if "statusLine" in base:
     tgt["statusLine"] = {**tgt.get("statusLine", {}), **base["statusLine"]}
-with open(sys.argv[2], "w") as f:
+tmp = sys.argv[2] + ".tmp"
+with open(tmp, "w") as f:
     json.dump(tgt, f, indent=2, ensure_ascii=False)
+os.replace(tmp, sys.argv[2])
 PYEOF
   # 预热 npx 缓存：把 base 里的 npx 命令跑一次 version，让 npx 提前下载到本地
   # —— 避免 statusLine 首次刷新时卡在下载
@@ -358,9 +366,15 @@ PYEOF
   npx_cmd="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('statusLine',{}).get('command',''))" "$base" 2>/dev/null || true)"
   if [[ -n "$npx_cmd" && "$npx_cmd" == npx* ]]; then
     log "prewarming npx: $npx_cmd"
-    # 提取 npx -y <pkg>@<ver> 部分，附加 --version 触发下载
+    # 安全提取：Python 解析空格分隔的 token，取第一个含 '@' 且不以 '-' 开头的
+    # —— 避免 echo | awk 注入（base JSON 被污染时不会执行任意命令）
     local pkg_arg
-    pkg_arg="$(echo "$npx_cmd" | awk '{for(i=1;i<=NF;i++) if($i ~ /^.*@/) {print $i; exit}}')"
+    pkg_arg="$(python3 -c "
+import sys
+for p in sys.argv[1].split():
+    if '@' in p and not p.startswith('-'):
+        print(p); break
+" "$npx_cmd" 2>/dev/null)"
     [[ -n "$pkg_arg" ]] && timeout 30 npx -y "$pkg_arg" --version >/dev/null 2>&1 \
       && log "npx prewarm ok" \
       || warn "npx prewarm failed (network? will retry on first statusLine refresh)"
