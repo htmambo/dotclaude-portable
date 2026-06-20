@@ -84,6 +84,7 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 | `commands/fullauto-prune.md` | `commands/fullauto-prune.md` | symlink |
 | `skills/fullauto/SKILL.md` | `skills/fullauto/SKILL.md` | symlink |
 | `global/json/settings.statusline.base.json` | 合并到 `settings.json` 的 `statusLine` 字段 | `install-statusline` 子命令 |
+| `hooks/review-watchdog.mjs` | `hooks/review-watchdog.mjs` | symlink（`HOOK_FILES` 动态扫描，新增 hook 丢进 `hooks/` 即可自动部署） |
 
 ### 4 个 MCP（`global/json/mcp.base.json`）
 
