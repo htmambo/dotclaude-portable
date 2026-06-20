@@ -70,6 +70,10 @@ cd dotclaude-portable
 - 一次性备份 `mcp.json` 为 `.bak`
 - 跑完后**重启 Claude Code** 让新配置生效
 
+## 详细能力说明
+
+刚装好想了解 **2 个 user command**（`/fix-permissions` / `/fullauto-prune`）、**1 个 user skill**（`fullauto`）、**1 个 hook**（`review-watchdog.mjs`）、**4 个 MCP server**（`context7` / `filesystem` / `mcp-deepwiki` / `memory`）的**触发方式、行为边界、典型场景、排错速查** → 读 [`EXTENSIONS.md`](./EXTENSIONS.md)。
+
 ## CI 验证
 
 GitHub Actions 工作流位于 `.github/workflows/ci.yml`，在 push/PR 时自动跑：
