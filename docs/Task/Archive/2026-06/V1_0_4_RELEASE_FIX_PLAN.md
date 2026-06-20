@@ -5,9 +5,27 @@
 **Tag**: `v1.0.4` (annotated) → `e2c37a9`
 **Branch**: `release/v1.0.4`(与 `main` 同源,完全等价)
 
+## 外部 Review 意见 (2026-06-20)
+
+调用 `mcp__coding-bridge__review_code` 审查本归档,得到 verdict = **REJECTED (含 2 P0 + 1 P1)**。
+
+| # | 等级 | 问题 | 实际核验 | 处置 |
+|---|---|---|---|---|
+| 1 | P0 | "46 分钟内完成" 时间表述易误读 | 原 3 commit 时间线 04:23→04:28→05:09 实为 46 分钟,**但未限定"原 3 commit"** | 已修订下方"背景"段 |
+| 2 | P0 | tag 拓扑描述歧义 | 归档未交代"先 release 分支 → 落 tag → 落归档 commit → main ff" 的时间顺序,易让人误以为 `f0632b6` 与 tag 同一对象 | 已修订下方"动作 3"与"文件变更"段,补时间线 |
+| 3 | P1 | "2 次 no-op rebase" 被粉饰为"验证确认" | 实质是误读顺序后做的 2 次徒劳 rebase | 已修订下方"动作 1"与"经验教训"段,降为平实描述 |
+| 4 | P2 | 索引排序无规则 | review 自行判定"无需修改" | 暂不处理 |
+| 5 | P2 | OMC trailer 6 项合规 | review 判定"齐全且闭合" | 暂不处理 |
+
+provider = `coding-bridge`,SESSION_ID 留存备查。
+
+---
+
 ## 背景
 
-最近 3 次提交(`9df3c4b` / `3924496` / `e2c37a9`)在 46 分钟内完成,均属 v1.0.4 收尾批次。审查后识别 3 个可改进点:
+**原 3 次提交** `9df3c4b` (06-19 04:23) → `3924496` (06-19 04:28) → `e2c37a9` (06-19 05:09) 在 **46 分钟内**完成,均属 v1.0.4 收尾批次。**归档 commit `f0632b6` 是在 06-20 17:53 落地的后置追溯**,与前 3 个 commit 不在同一天。
+
+审查后识别 3 个可改进点:
 
 1. 提交顺序与"docs 先行"原则的预期相反
 2. 缺乏 v1.0.4 正式 tag / release commit
@@ -19,11 +37,9 @@
 
 **做法**:`git checkout -b release/v1.0.4` → `git rebase -i HEAD~3`
 
-**结论**:原顺序 `e2c37a9 (feat) → 3924496 (docs/hook) → 9df3c4b (docs/CLAUDE)` 实际**就是**"feat 先落地 → docs 收尾"的正确顺序。
+**结果**(如实记录):**误读顺序**——初次审查时把"docs 先行"原则误解为"原 3 commit 中 docs 应该在更早位置",于是尝试 `git rebase -i` 调整顺序。**实际**原顺序 `e2c37a9 (feat) → 3924496 (docs/hook) → 9df3c4b (docs/CLAUDE)` 已经是"feat 先落地 → docs 收尾"的正确顺序("先 commit 的应是先成型的能力"——feat 落地后 docs 引用 feat 描述)。
 
-初次审查时误判"docs 先行"为"更早 commit",实则"先 commit 的应是先成型的能力"——feat 落在 docs 之前,docs 在后引用 feat 描述,顺序无误。
-
-**净操作**:2 次 `git rebase -i` 验证后确认 no-op,git hash 不变,无副作用。
+**净操作**:执行 2 次 `git rebase -i`,因 `pick` 列表顺序与现状一致(本就是正确顺序),git 视为无需操作,直接完成,hash 不变,无副作用。**这是 2 次无效操作,无产出**。
 
 ### 动作 2:梳理 4 个高频入口文档
 
@@ -43,6 +59,12 @@
 **结论**:无重复段,无需二次合并。原改进点(3)被证伪。
 
 ### 动作 3:落 v1.0.4 annotated tag
+
+**时间线**(原归档未交代完整,补全):
+1. `git checkout -b release/v1.0.4`(此时 `main = e2c37a9`)
+2. `git tag -a v1.0.4 -m "..." HEAD` → 落在 `e2c37a9` 上
+3. `git add ... && git commit` → 落归档 commit `f0632b6`(仍在 release 分支)
+4. `git checkout main && git merge --ff-only release/v1.0.4` → `main` 推进到 `f0632b6`
 
 ```bash
 git tag -a v1.0.4 -m "v1.0.4 - 2026-06-19
@@ -65,8 +87,9 @@ docs(global/CLAUDE.md): translate to English
 **tag 验证**:
 - 类型:`tag` (annotated,非 lightweight)
 - 指向:`e2c37a939d4d52f79e7ff58050615173f9711f71`
-- Tagger: 果农 <htmambo@gmail.com>
+- Tagger: 果农 <htmambo@gmail.com> (tag 时间 `1781949094 +0800`)
 - 关联 commit 内容与 CHANGELOG [1.0.4] 段 1:1 吻合
+- **与归档 commit `f0632b6` 无任何关系**——归档是后置追溯文档,不属于 v1.0.4 本身
 
 **推送策略**:仅本地,不推送。用户审阅后自行 `git push origin v1.0.4` / `git push origin release/v1.0.4`。
 
@@ -78,10 +101,10 @@ docs(global/CLAUDE.md): translate to English
 
 ## 经验教训
 
-1. **`rebase -i` 前先看现状**:`git log --oneline -3` 比 `pick` 列表更直观。原顺序实际是正确顺序,根本不需要 rebase
+1. **`rebase -i` 前先看现状**:`git log --oneline -3` 比 `pick` 列表更直观。**实操错误**:本次直接进 rebase 后才发现原顺序正确
 2. **改进点识别要二次校验**:改进点(3)"高频冲突"在内容层面是伪命题——只要每个 commit 改的"段"不重叠,就不会冲突;冲突在 commit 间(共同修改同一行)而非段间
 3. **tag 推送默认走用户决策**:符合"hard-to-reverse 需确认"原则,tag 推送到公共可见位置由用户拍板
-4. **诚实比光鲜重要**:2 次 no-op rebase 应主动报告,而不是隐去
+4. **诚实比光鲜重要**:2 次无效 rebase 应主动报告(本次外部 review 命中了"粉饰"问题,说明原归档措辞偏向自夸)
 
 ## 文件变更
 
