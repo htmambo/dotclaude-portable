@@ -52,6 +52,24 @@ cd dotclaude-portable
 
 **不在范围内**(pull-and-sync 失败/异常时)按下面"已有机器 git pull 后"段手动补。
 
+## 跨项目用 nudge-review 强制外部审核
+
+`hooks/nudge-review.sh` 是 **commit-msg hook**:提交代码改动(非 markdown)时,commit message 必须含审核标记:
+
+- `Review: APPROVED` — 走完整外部审核并通过
+- `Review: N/A <reason>` — 显式豁免(typo / doc-only / trivial)
+
+**装到本仓库**: 默认已通过 `install.sh` 启用(等同其他 hook)。
+
+**装到其他项目**(单条命令,每个项目跑一次):
+
+```bash
+cp /path/to/dotclaude-portable/hooks/nudge-review.sh <your-project>/.git/hooks/commit-msg
+chmod +x <your-project>/.git/hooks/commit-msg
+```
+
+之后该项目所有代码改动 commit 都会被卡,直到 message 含 Review 字段。绕过:`git commit --no-verify`(显式,失去护栏)。
+
 ## 已有 dotclaude-portable 的机器,`git pull` 后
 
 绝大多数情况 `git pull` 后 **symlink 自动同步**,无需重跑 install.sh：
@@ -159,6 +177,7 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 - `hooks/review-watchdog.mjs` — PostToolUse hook；`Write|Edit` 触及代码文件但本轮未调 `runReview` 时 stderr 提示（`exit 0`，非阻塞）
 - `hooks/guard-read-size.mjs` — PreToolUse:Read 守卫；图片/PDF/压缩档 >2MB 或文本 >5MB 时 deny 防撑爆 32MB 请求体；用 `path.extname()` 兼容复合扩展名
 - `hooks/warn-context.mjs` — UserPromptSubmit 守卫；transcript ≥24MB 温和 / ≥28MB 强烈 / ≥30MB 紧急 三档 systemMessage 提醒，趁 `/compact` 仍可成功时主动处理
+- `hooks/nudge-review.sh` — nudge-review.sh — commit-msg hook: 提交前提醒跑外部代码审核
 - Auto-deploy：`./install.sh` 通过 `HOOK_FILES` 动态扫描 `hooks/*.mjs` / `hooks/*.sh`，无需在 MAP 中注册；`--check` 校验 symlink 健在
 
 ## 安全防御
