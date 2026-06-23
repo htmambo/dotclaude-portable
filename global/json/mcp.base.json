@@ -17,8 +17,12 @@
       "args": ["-y", "@modelcontextprotocol/server-memory"]
     },
     "coding-bridge": {
-      "command": "npx",
-      "args": ["-y", "github:htmambo/coding-bridge-mcp"]
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/htmambo/coding-bridge-mcp.git", "coding-bridge-mcp"],
+      "env": {
+        "PROVIDER": "${CODING_BRIDGE_PROVIDER:-xfyun-coding}",
+        "API_KEY": "${CODING_BRIDGE_API_KEY}"
+      }
     }
   }
 }

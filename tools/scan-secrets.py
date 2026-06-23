@@ -41,13 +41,20 @@ BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip", ".tar", ".gz", ".
 # 跳过目录
 SKIP_DIRS = {".git", "node_modules", "backups", ".omc", ".cache", "tests"}
 
-ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")
+ROOT = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(".").resolve()
+# 全仓库扫描（含 tests/fixtures 负样本）时跳过 tests/，子目录扫描时仅跳运行时目录
+# cwd 不影响判断：用 ROOT 自身是否含 tests/ 段决定（避免 v1.0.2 已知 cwd 漂移 bug 复发）
 SKIP_DEFAULT = SKIP_DIRS  # 全仓库扫描时跳过 tests/fixtures
 SKIP_TIGHT: set[str] = {".git", ".omc", ".cache"}  # 子目录扫描时仅跳运行时
 
+def _is_repo_scan() -> bool:
+    # ROOT 是仓库根的判定：ROOT 路径直接包含 tests/ 或 docs/Usage/INSTALL.md 等仓库特征
+    # 这样无论 cwd 在哪都不会误判
+    return (ROOT / "tests" / "fixtures").is_dir() and (ROOT / "global" / "CLAUDE.md").is_file()
+
 def iter_files() -> list[Path]:
     out: list[Path] = []
-    skip = SKIP_DEFAULT if str(ROOT.resolve()) == str(Path(".").resolve()) else SKIP_TIGHT
+    skip = SKIP_DEFAULT if _is_repo_scan() else SKIP_TIGHT
     for p in ROOT.rglob("*"):
         if not p.is_file():
             continue

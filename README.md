@@ -1,7 +1,7 @@
 # dotclaude-portable
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.5-blue.svg)](./VERSION)
+[![Version](https://img.shields.io/badge/version-1.0.6-blue.svg)](./VERSION)
 [![CI](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml/badge.svg)](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/htmambo/dotclaude-portable)](https://github.com/htmambo/dotclaude-portable/releases)
 
@@ -90,9 +90,10 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 ### 5 个 MCP（`global/json/mcp.base.json`）
 
 - `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`
-- 全部用 `npx -y <pkg>` 启动，**首次使用 npx 自动下载**，无需预装
-- `coding-bridge` 走 `github:` 协议（`npx -y github:htmambo/coding-bridge-mcp`），对应 `global/CLAUDE.md` 的 External Review 抽象层；自动加进 `execution_config.json` 的 `allowed_tools`
-- 跨机器只需 `node` + `npx`；`install.sh` 渲染 `.mcp.json` 后生效
+- 前 4 个用 `npx -y <pkg>` 启动；**`coding-bridge` 是 Python 项目**，需先装 `uvx`（`curl -LsSf https://astral.sh/uv/install.sh | sh`），启动命令是 `uvx --from git+https://github.com/htmambo/coding-bridge-mcp.git coding-bridge-mcp`
+- **必设环境变量**：`export CODING_BRIDGE_API_KEY=<your-key>`（写到 `~/.zshrc`）；可选 `CODING_BRIDGE_PROVIDER`（默认 `xfyun-coding`）
+- 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` 加进 `~/.claude/settings.json` 的 `permissions.allow`（独立子命令 `install-coding-bridge-allow`，含 sk- token 的其他字段原样保留）
+- 跨机器只需 `node` + `npx` + `uvx`
 
 ### `ccstatusline-zh`（非 plugin，是 statusLine 命令）
 

@@ -13,6 +13,7 @@
 #   ./install.sh install-pre-push  # 在 .git/hooks/pre-push 安装 secret 拦截
 #   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
 #   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
+#   ./install.sh install-coding-bridge-allow # 合并 coding-bridge allow 到 settings.json
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     install-statusline) ACTION="install-statusline"; shift ;;
     install-memory-mcp) ACTION="install-memory-mcp"; shift ;;
     install-coding-bridge-mcp) ACTION="install-coding-bridge-mcp"; shift ;;
+    install-coding-bridge-allow) ACTION="install-coding-bridge-allow"; shift ;;
     -h|--help)
       sed -n '2,15p' "$0" | sed 's/^# \?//'
       exit 0
@@ -164,14 +166,26 @@ install_one() {
       else
         log "render+install: ${dst#$HOME/}"
         if [[ $DRY_RUN -eq 0 ]]; then
-          # 安全渲染：仅替换 ${HOME} 与 ${USER}，避免任意 envsubst 风险
+          # 安全渲染：替换所有 ${VAR} / ${VAR:-default} 占位。
+          # 找不到的 env 保留原占位字符串（不阻断 install；让 MCP 启动时自然报错给用户）
+          # HOME / USER 强制填本机值（占位符可能不存在于 env）
           HOME_VAL="$HOME" USER_VAL="${USER:-$(id -un)}" \
             python3 -c "
-import os, sys, pathlib
+import os, re, sys, pathlib
 src = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
-for k, v in (('HOME', os.environ['HOME_VAL']),
-             ('USER', os.environ['USER_VAL'])):
-    src = src.replace('\${' + k + '}', v)
+
+def replace(match):
+    expr = match.group(1)
+    if ':-' in expr:
+        name, default = expr.split(':-', 1)
+    else:
+        name, default = expr, match.group(0)  # 缺失则保留原 \${VAR}
+    val = os.environ.get(name)
+    if val is None:
+        val = os.environ.get(name + '_VAL', default)
+    return val
+
+src = re.sub(r'\\\${([^}]+)}', replace, src)
 pathlib.Path(sys.argv[2]).write_text(src, encoding='utf-8')
 " "$src" "$dst"
         fi
@@ -449,39 +463,97 @@ PYEOF
 }
 
 do_install_coding_bridge_mcp() {
-  # coding-bridge 是 GitHub 源（非 npm 包），`npx -y github:user/repo` 自动 clone+build+run
-  # 此处只做"轻量验证"：检查 .mcp.json 是否包含 coding-bridge 段 + execution_config.json
-  # 的 allowed_tools 是否含 mcp__coding-bridge__*（不允许网络预热，避免 install 卡住）
+  # coding-bridge 是 Python MCP（uvx 启动），不是 npx。
+  # 此处只做轻量验证，不强制网络预热（首次启动由 Claude Code 触发）。
   local mcp_config="$HOME/.claude/.mcp.json"
-  local exec_cfg="${TARGET_HOME}/execution_config.json"
   local ok=1
 
-  # 1. 检查 mcp.json 段
+  # 1. 检查 .mcp.json 段（uvx 命令）
   if [[ -f "$mcp_config" ]] && python3 -c "
 import json, sys
 d = json.load(open(sys.argv[1]))
-servers = d.get('mcpServers', {})
-sys.exit(0 if 'coding-bridge' in servers else 1)
+cb = d.get('mcpServers', {}).get('coding-bridge', {})
+sys.exit(0 if cb.get('command') == 'uvx' else 1)
 " "$mcp_config" 2>/dev/null; then
-    log "coding-bridge MCP: configured in $mcp_config"
+    log "coding-bridge MCP: uvx entry in $mcp_config"
   else
-    warn "coding-bridge MCP: NOT in $mcp_config (render from global/json/mcp.base.json)"
+    warn "coding-bridge MCP: NOT uvx in $mcp_config (rerun ./install.sh)"
     ok=0
   fi
 
-  # 2. 检查 execution_config.json 允许列表
-  if [[ -f "$exec_cfg" ]] && grep -q 'mcp__coding-bridge__' "$exec_cfg" 2>/dev/null; then
-    log "coding-bridge MCP: allowed in $exec_cfg"
+  # 2. 检查 uvx 是否安装
+  if command -v uvx >/dev/null 2>&1; then
+    log "uvx: installed ($(command -v uvx))"
   else
-    warn "coding-bridge MCP: NOT in $exec_cfg allowed_tools"
+    warn "uvx NOT installed; install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
     ok=0
   fi
+
+  # 3. 检查 env（API_KEY / PROVIDER）
+  if [[ -n "${CODING_BRIDGE_API_KEY:-}" ]]; then
+    log "CODING_BRIDGE_API_KEY: set (PROVIDER=${CODING_BRIDGE_PROVIDER:-xfyun-coding})"
+  else
+    warn "CODING_BRIDGE_API_KEY NOT set; export it in ~/.zshrc or pass via env"
+    ok=0
+  fi
+
+  # 4. settings.json 允许列表（关键：Claude Code 实际读的是 settings.json 不是 execution_config）
+  do_install_coding_bridge_allow
 
   if [[ $ok -eq 1 ]]; then
     log "coding-bridge MCP: ready (restart Claude Code to activate)"
   else
-    warn "coding-bridge MCP: not fully wired; rerun ./install.sh to refresh"
+    warn "coding-bridge MCP: not fully wired; see warnings above"
   fi
+}
+
+do_install_coding_bridge_allow() {
+  # 把 mcp__coding-bridge__review_code / review_plan 加入 ~/.claude/settings.json 的
+  # permissions.allow。settings.json 是含 sk- token 的真文件，必须用 Python 深合并：
+  # - 保留 env / model / statusLine / enabledPlugins 等所有其他字段原样不动
+  # - permissions.allow 数组追加（已存在则跳过，幂等）
+  # - 每次写之前 .bak.<ts> 备份（一次性，不覆盖）
+  local settings="${TARGET_HOME}/settings.json"
+  [[ -f "$settings" ]] || { warn "settings.json not found at $settings (skip allowlist)"; return 0; }
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log "[dry-run] would merge mcp__coding-bridge__* into $settings permissions.allow"
+    return 0
+  fi
+
+  # 备份（仅对真文件备份；symlink 跳过）；只备份**一次**（已有任意 .bak.* 则跳过，
+  # 避免每次 install-coding-bridge-allow 都产生新备份）
+  if [[ ! -L "$settings" ]] && ! compgen -G "${settings}.bak.*" >/dev/null 2>&1; then
+    local ts
+    ts="$(python3 -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S"))')"
+    cp -a "$settings" "${settings}.bak.${ts}" || { err "backup failed: $settings"; return 1; }
+  fi
+
+  python3 - "$settings" <<'PYEOF' || { err "settings.json merge failed"; return 1; }
+import json, os, sys, tempfile
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        d = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError) as e:
+    print(f"FATAL: invalid settings.json: {e}", file=sys.stderr)
+    sys.exit(1)
+
+perms = d.setdefault("permissions", {})
+allow = perms.setdefault("allow", [])
+need = ["mcp__coding-bridge__review_code", "mcp__coding-bridge__review_plan"]
+added = [t for t in need if t not in allow]
+if added:
+    allow.extend(added)
+    # 原子写：os.replace(tmp, path) 防中断破坏
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+    print(f"[install-coding-bridge-allow] added {len(added)} entry: {', '.join(added)}")
+else:
+    print(f"[install-coding-bridge-allow] already present; no change")
+PYEOF
 }
 
 case "$ACTION" in
@@ -494,4 +566,5 @@ case "$ACTION" in
   install-statusline) do_install_statusline ;;
   install-memory-mcp) do_install_memory_mcp ;;
   install-coding-bridge-mcp) do_install_coding_bridge_mcp ;;
+  install-coding-bridge-allow) do_install_coding_bridge_allow ;;
 esac

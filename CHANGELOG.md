@@ -4,6 +4,19 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [1.0.6] - 2026-06-23
+
+### Fixed
+
+- **`coding-bridge` MCP 实际不可用 (1.0.5 残缺版补救)** — 三个根因叠加：
+  1. `npx -y github:htmambo/coding-bridge-mcp` **命令错了**：coding-bridge-mcp 是 **Python 项目**（含 `.python-version`），正确启动命令是 `uvx --from git+https://github.com/htmambo/coding-bridge-mcp.git coding-bridge-mcp`
+  2. `mcp__coding-bridge__review_code` 写到了**错的文件**：Claude Code 真正读 `~/.claude/settings.json` 的 `permissions.allow`，不是 `execution_config.json`（后者是 OMC 给 review MCP 用的）
+  3. 没注入 `env`（PROVIDER / API_KEY）—— MCP 服务需要 env 才能调讯飞 / 火山 API
+- **`install-coding-bridge-allow` 子命令**：用 Python `dict.update` 把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` 追加到 `~/.claude/settings.json` 的 `permissions.allow`；保留所有其他字段（env 含 sk- token / model / statusLine / enabledPlugins / extraKnownMarketplaces 等）原样不动；幂等；首次备份 `settings.json.bak.<ts>`；原子写 `os.replace(tmp, path)`
+- **`install_one` render 支持通用 `${VAR}` 占位**：原来只替换 `${HOME}` / `${USER}`，现在支持 `${VAR}` 与 `${VAR:-default}`；env 缺失时保留原占位（不阻断 install，由 MCP 启动时报错给用户）
+- **`scan-secrets.py` cwd 漂移 bug**：原来用 `ROOT.resolve() == Path(".").resolve()` 判断"全仓库扫描"，从非仓库 cwd 跑会**误报 `tests/fixtures/secret-samples.json`**（负样本）；改用"ROOT 路径下是否有 `tests/fixtures` + `global/CLAUDE.md`"判断（cwd 不影响）。CI doctor 路径从此稳定
+- **`.bak.<ts>` 重复**：原来每次跑 install-coding-bridge-allow 都产生新备份；改为"已有任意 `.bak.*` 则跳过"
+
 ## [1.0.5] - 2026-06-23
 
 ### Added

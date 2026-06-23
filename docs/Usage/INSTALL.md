@@ -73,18 +73,47 @@ cd dotclaude-portable
 
 ## coding-bridge MCP（External Review）
 
-`global/CLAUDE.md` 强制所有改动需经 `runReview()` 走外部 review MCP（codex / kimi / coding-bridge）。`coding-bridge` 是 GitHub 源 MCP：
+`global/CLAUDE.md` 强制所有改动需经 `runReview()` 走外部 review MCP（codex / kimi / coding-bridge）。`coding-bridge` 是 GitHub 源 MCP（**Python 项目**，启动需 `uvx`）：
+
+### 一次性配置
 
 ```bash
-./install.sh install-coding-bridge-mcp   # 验证 .mcp.json + execution_config.json 已配
+# 1. 装 uvx（如果还没装）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. 在 ~/.zshrc 加 API Key
+echo 'export CODING_BRIDGE_API_KEY=your-xfyun-or-volcengine-key' >> ~/.zshrc
+echo 'export CODING_BRIDGE_PROVIDER=xfyun-coding' >> ~/.zshrc  # 可选，默认 xfyun-coding
+source ~/.zshrc
+
+# 3. 重装本仓库让 install.sh 渲染 .mcp.json 用 uvx 命令
+./install.sh --force
+# （如果之前已装过、.mcp.json 已存在且是 npx 命令，先 rm ~/.claude/.mcp.json 再 ./install.sh）
+
+# 4. 验证
+./install.sh install-coding-bridge-mcp
+# 输出应包含 "uvx entry" + "uvx: installed" + "settings.json.allowlist: ok"
+# 唯一 warn 应是 "CODING_BRIDGE_API_KEY NOT set"（如果你忘了 source ~/.zshrc）
+
+# 5. 重启 Claude Code
 ```
 
-行为：
-- 首次 `./install.sh --force` 会自动跑一次
-- 检查 `~/.claude/.mcp.json` 含 `coding-bridge` 段
-- 检查 `~/.claude/execution_config.json` 的 `allowed_tools` 含 `mcp__coding-bridge__*`
-- **不做网络预热**（首次实际启动由 Claude Code 触发，避免 install 阶段卡在 GitHub clone）
-- 跑完后**重启 Claude Code** 让新配置生效
+### 子命令清单
+
+| 子命令 | 作用 |
+|---|---|
+| `./install.sh install-coding-bridge-mcp` | 完整验证（uvx 命令 + uvx 安装 + env + allowlist），默认 install 末尾自动调 |
+| `./install.sh install-coding-bridge-allow` | 仅合并 allowlist 到 settings.json（不含 sk- token 的其他字段原样保留） |
+
+### 排错速查
+
+| 现象 | 原因 | 修复 |
+|---|---|---|
+| `MCP error: command not found: uvx` | 未装 uvx | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| `NOT uvx in .../.mcp.json` | 旧版 npx 命令（1.0.5 残缺） | `rm ~/.claude/.mcp.json && ./install.sh --force` |
+| `CODING_BRIDGE_API_KEY NOT set` | env 没配 | `export CODING_BRIDGE_API_KEY=...` |
+| `claude mcp list` 显示 `failed` | API Key 无效 / 没填到 env | 检查 key；用 `claude mcp get coding-bridge` 看详情 |
+| Claude Code 启动慢 10~30s | 首次 GitHub clone | npx/uvx 会缓存，之后秒启 |
 
 ## 详细能力说明
 
