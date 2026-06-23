@@ -40,6 +40,27 @@ cd dotclaude-portable
 ./install.sh --rollback 1 # 1=最新，2=上一个，3=再上一个
 ```
 
+## 已有 dotclaude-portable 的机器,`git pull` 后
+
+绝大多数情况 `git pull` 后 **symlink 自动同步**,无需重跑 install.sh：
+
+```bash
+cd ~/path/to/dotclaude-portable
+git pull
+./install.sh --check           # 3 秒,确认 symlink 健在
+```
+
+**仅在以下情况手动补**:
+
+| 情况 | 命令 | 何时 |
+|---|---|---|
+| 新机器首次 | `./install.sh` | clone 后首次 |
+| CLAUDE.md 被 OMC 改 | `./install.sh --force` | `omc-setup` / `omc-doctor` 后 |
+| 升级本机 pre-commit hook | `./install.sh install-pre-sync-docs-hook` | sync-docs.mjs 升级后首次 pull |
+| 重装 secret 扫描 hook | `./install.sh install-pre-push` | pre-push 被破坏后 |
+
+注：`scripts/setup-plugins.sh` 仅在新机器或新增 plugin 时跑,日常 pull 不需要。
+
 ## ⚠️ 已知冲突：OMC 与本仓库的 `CLAUDE.md`
 
 **问题**：`oh-my-claudecode` (OMC) 的 `omc-setup` / `omc-doctor` / 某些 slash command 会**直接 patch `~/.claude/CLAUDE.md`**（用 OMC 自己的模板覆盖）。本仓库把 `~/.claude/CLAUDE.md` 当作 `global/CLAUDE.md` 的 symlink 托管 —— **OMC 会把 symlink 替换成普通文件，覆盖你的全局指令**。

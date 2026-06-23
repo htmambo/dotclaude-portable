@@ -279,6 +279,38 @@ function writeVersionFile(ctx) {
   writeFileSync(marker, `repo=${ctx.repo}\nversion=${ver}\ninstalled_at=${new Date().toISOString()}\n`);
 }
 
+// ─── pre-commit hook: sync-docs 检查 ──────────────────
+// 跨机器 clone 后,本机的 .git/hooks/pre-commit 不会自动有。
+// 跑 install-pre-sync-docs-hook 装一次,后续 git commit 时 hooks/commands/skills
+// 任一改动都会跑 sync-docs --check,缺失则 abort。
+function installPreSyncDocsHook(ctx) {
+  const hook = join(ctx.repo, '.git', 'hooks', 'pre-commit');
+  // bash 模板:转义 ${...} 给运行时解析(BASH_SOURCE)
+  const script = `#!/usr/bin/env bash
+# dotclaude-portable pre-commit hook
+# 若新增 hook/command/skill 文件但 README 未同步,abort commit,提示运行:
+#   node scripts/sync-docs.mjs --apply
+set -euo pipefail
+
+STAGED=\$(git diff --cached --name-only)
+if [[ "\$STAGED" == *"hooks/"* ]] \\
+   || [[ "\$STAGED" == *"commands/"* ]] \\
+   || [[ "\$STAGED" == *"skills/"* ]] \\
+   || [[ "\$STAGED" == *"scripts/sync-docs.mjs"* ]]; then
+  REPO_ROOT="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
+  node "\${REPO_ROOT}/scripts/sync-docs.mjs" --check
+fi
+`;
+  if (existsSync(hook)) {
+    log(`pre-commit hook already exists at ${hook}; overwrite with current template`);
+  }
+  log(`installing sync-docs pre-commit hook → ${hook}`);
+  if (ctx.dryRun) return;
+  mkdirSync(dirname(hook), { recursive: true });
+  writeFileSync(hook, script);
+  chmodSync(hook, 0o755);
+}
+
 // ─── pre-push hook ────────────────────────────────────
 function installPrePush(ctx) {
   const hook = join(ctx.repo, '.git', 'hooks', 'pre-push');
@@ -636,6 +668,7 @@ function install(ctx) {
   deployHooks(ctx);
   writeVersionFile(ctx);
   injectShellProfile(ctx);
+  installPreSyncDocsHook(ctx);
   installPrePush(ctx);
   installCodingBridgeJson(ctx);
   installCodingBridgeMcp(ctx);
@@ -656,6 +689,7 @@ function printHelp() {
 #   ./install.sh --check         # symlink 健康巡检
 #   ./install.sh --rollback N    # 回滚到第 N 个备份
 #   ./install.sh install-pre-push  # 在 .git/hooks/pre-push 安装 secret 拦截
+#   ./install.sh install-pre-sync-docs-hook  # 在 .git/hooks/pre-commit 安装 sync-docs 检查(跨机器必备)
 #   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
 #   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
 #   ./install.sh install-coding-bridge-allow # 合并 coding-bridge allow 到 settings.json
@@ -682,6 +716,7 @@ function parseArgs(argv) {
         opts.rollbackN = Number(argv[++i] || 1);
         positionals.push('rollback'); break;
       case 'install-pre-push': positionals.push('install-pre-push'); break;
+      case 'install-pre-sync-docs-hook': positionals.push('install-pre-sync-docs-hook'); break;
       case 'install-statusline': positionals.push('install-statusline'); break;
       case 'install-memory-mcp': positionals.push('install-memory-mcp'); break;
       case 'install-coding-bridge-mcp': positionals.push('install-coding-bridge-mcp'); break;
@@ -726,6 +761,7 @@ async function main() {
     check: () => check(ctx),
     rollback: () => rollback(ctx),
     'install-pre-push': () => installPrePush(ctx),
+    'install-pre-sync-docs-hook': () => installPreSyncDocsHook(ctx),
     'install-statusline': () => installStatusline(ctx),
     'install-memory-mcp': () => installMemoryMcp(ctx),
     'install-coding-bridge-mcp': () => installCodingBridgeMcp(ctx),
