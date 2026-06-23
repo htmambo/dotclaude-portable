@@ -86,6 +86,8 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 | `skills/fullauto/SKILL.md` | `skills/fullauto/SKILL.md` | symlink |
 | `global/json/settings.statusline.base.json` | 合并到 `settings.json` 的 `statusLine` 字段 | `install-statusline` 子命令 |
 | `hooks/review-watchdog.mjs` | `hooks/review-watchdog.mjs` | symlink（`HOOK_FILES` 动态扫描，新增 hook 丢进 `hooks/` 即可自动部署） |
+| `hooks/guard-read-size.mjs` | `hooks/guard-read-size.mjs` | symlink（PreToolUse:Read — 超 2MB 媒体/5MB 文本自动 deny，避免撑爆 32MB 请求体） |
+| `hooks/warn-context.mjs` | `hooks/warn-context.mjs` | symlink（UserPromptSubmit — transcript 24/28/30 MB 三档预警 systemMessage） |
 
 ### 6 个 MCP（`global/json/mcp.base.json`）
 
@@ -119,9 +121,11 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 
 完整决策表见 `docs/Analysis/INVENTORY.md`。
 
-### Hooks (1 已落地)
+### Hooks (3 已落地)
 
 - `hooks/review-watchdog.mjs` — PostToolUse hook；`Write|Edit` 触及代码文件但本轮未调 `runReview` 时 stderr 提示（`exit 0`，非阻塞）
+- `hooks/guard-read-size.mjs` — PreToolUse:Read 守卫；图片/PDF/压缩档 >2MB 或文本 >5MB 时 deny 防撑爆 32MB 请求体；用 `path.extname()` 兼容复合扩展名
+- `hooks/warn-context.mjs` — UserPromptSubmit 守卫；transcript ≥24MB 温和 / ≥28MB 强烈 / ≥30MB 紧急 三档 systemMessage 提醒，趁 `/compact` 仍可成功时主动处理
 - Auto-deploy：`./install.sh` 通过 `HOOK_FILES` 动态扫描 `hooks/*.mjs` / `hooks/*.sh`，无需在 MAP 中注册；`--check` 校验 symlink 健在
 
 ## 安全防御
