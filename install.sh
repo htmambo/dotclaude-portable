@@ -12,6 +12,7 @@
 #   ./install.sh --rollback N    # 回滚到第 N 个备份
 #   ./install.sh install-pre-push  # 在 .git/hooks/pre-push 安装 secret 拦截
 #   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
+#   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     install-pre-push) ACTION="install-pre-push"; shift ;;
     install-statusline) ACTION="install-statusline"; shift ;;
     install-memory-mcp) ACTION="install-memory-mcp"; shift ;;
+    install-coding-bridge-mcp) ACTION="install-coding-bridge-mcp"; shift ;;
     -h|--help)
       sed -n '2,15p' "$0" | sed 's/^# \?//'
       exit 0
@@ -48,8 +50,10 @@ log()  { printf '[%s] %s\n' "${ACTION}" "$*"; }
 warn() { printf '[%s][warn] %s\n' "${ACTION}" "$*" >&2; }
 err()  { printf '[%s][err] %s\n' "${ACTION}" "$*" >&2; }
 
-if [[ "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
-  err "requires bash >= 4.0 (current: ${BASH_VERSION:-unknown})"
+# bash 3.2+：macOS 系统默认 bash 3.2.57（GPLv3 协议限制 Apple 不升级），
+# 也兼容 Linux 发行版常见 bash 4/5。低于 3.2 缺少 [[ ]] / 数组等基础特性，拒收。
+if [[ "${BASH_VERSINFO[0]:-0}" -lt 3 ]]; then
+  err "requires bash >= 3.2 (current: ${BASH_VERSION:-unknown})"
   exit 1
 fi
 
@@ -71,7 +75,9 @@ declare -a MAP=(
 # 目录为空时列表也为空（不报"missing"）
 HOOK_FILES=()
 if [[ -d "${REPO_ROOT}/hooks" ]]; then
-  while IFS= read -r f; do HOOK_FILES+=("$f"); done < <(find "${REPO_ROOT}/hooks" -mindepth 1 -maxdepth 1 \( -name '*.mjs' -o -name '*.sh' \) | sort)
+  # 收集**相对** REPO_ROOT/hooks 的文件名（不带绝对路径前缀），
+  # 拼装时用 ${src_dir}/${h} 才不会重复路径
+  while IFS= read -r f; do HOOK_FILES+=("${f#${REPO_ROOT}/hooks/}"); done < <(find "${REPO_ROOT}/hooks" -mindepth 1 -maxdepth 1 \( -name '*.mjs' -o -name '*.sh' \) | sort)
 fi
 
 do_install() {
@@ -92,6 +98,7 @@ do_install() {
   write_version_file
   inject_shell_profile
   do_install_pre_push
+  do_install_coding_bridge_mcp
   log "done. managed: $TARGET_HOME"
 }
 
@@ -129,9 +136,10 @@ backup_existing() {
 }
 
 prune_backups() {
-  # 用 find 避免空目录时 ls glob 失败触发 pipefail+set -e
-  local -a snaps
-  mapfile -t snaps < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
+  # bash 3.2 兼容：mapfile 是 4.0+ 内建，改用 while read 累计到索引数组
+  # （macOS 系统 bash 3.2.57 不可用；索引数组 declare -a 在 3.2 可用）
+  local -a snaps=()
+  while IFS= read -r d; do snaps+=("$d"); done < <(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
   local count=${#snaps[@]}
   if [[ $count -gt $MAX_BACKUPS ]]; then
     for d in "${snaps[@]:$MAX_BACKUPS}"; do
@@ -200,6 +208,9 @@ install_link_or_copy() {
 deploy_hooks() {
   local src_dir="${REPO_ROOT}/hooks"
   [[ -d "$src_dir" ]] || { log "no hooks/ dir in repo; skipping"; return; }
+  # hooks/ 目录在 clean install 时不存在；install_link_or_copy 不会创建父目录，
+  # 显式 mkdir 避免 ln -s 报 "No such file or directory"
+  [[ $DRY_RUN -eq 1 ]] || mkdir -p "${TARGET_HOME}/hooks"
   for h in "${HOOK_FILES[@]}"; do
     local s="${src_dir}/$h"
     [[ -e "$s" ]] || continue
@@ -437,6 +448,42 @@ PYEOF
   warn "restart Claude Code to activate new config"
 }
 
+do_install_coding_bridge_mcp() {
+  # coding-bridge 是 GitHub 源（非 npm 包），`npx -y github:user/repo` 自动 clone+build+run
+  # 此处只做"轻量验证"：检查 .mcp.json 是否包含 coding-bridge 段 + execution_config.json
+  # 的 allowed_tools 是否含 mcp__coding-bridge__*（不允许网络预热，避免 install 卡住）
+  local mcp_config="$HOME/.claude/.mcp.json"
+  local exec_cfg="${TARGET_HOME}/execution_config.json"
+  local ok=1
+
+  # 1. 检查 mcp.json 段
+  if [[ -f "$mcp_config" ]] && python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+servers = d.get('mcpServers', {})
+sys.exit(0 if 'coding-bridge' in servers else 1)
+" "$mcp_config" 2>/dev/null; then
+    log "coding-bridge MCP: configured in $mcp_config"
+  else
+    warn "coding-bridge MCP: NOT in $mcp_config (render from global/json/mcp.base.json)"
+    ok=0
+  fi
+
+  # 2. 检查 execution_config.json 允许列表
+  if [[ -f "$exec_cfg" ]] && grep -q 'mcp__coding-bridge__' "$exec_cfg" 2>/dev/null; then
+    log "coding-bridge MCP: allowed in $exec_cfg"
+  else
+    warn "coding-bridge MCP: NOT in $exec_cfg allowed_tools"
+    ok=0
+  fi
+
+  if [[ $ok -eq 1 ]]; then
+    log "coding-bridge MCP: ready (restart Claude Code to activate)"
+  else
+    warn "coding-bridge MCP: not fully wired; rerun ./install.sh to refresh"
+  fi
+}
+
 case "$ACTION" in
   install)         do_install ;;
   uninstall)       do_uninstall ;;
@@ -446,4 +493,5 @@ case "$ACTION" in
   install-pre-push) do_install_pre_push ;;
   install-statusline) do_install_statusline ;;
   install-memory-mcp) do_install_memory_mcp ;;
+  install-coding-bridge-mcp) do_install_coding_bridge_mcp ;;
 esac

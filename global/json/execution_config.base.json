@@ -5,7 +5,7 @@
   "max_thinking_tokens": null,
   "verbose": true,
   "permissions": {
-    "allowed_tools": ["Read", "Write", "Edit", "Bash"],
+    "allowed_tools": ["Read", "Write", "Edit", "Bash", "mcp__coding-bridge__review_code", "mcp__coding-bridge__review_plan"],
     "disallowed_tools": [],
     "permission_mode": "Interactive",
     "auto_approve_edits": false,

@@ -26,6 +26,7 @@ cd dotclaude-portable
 | `./install.sh doctor` | secret 扫描 |
 | `./install.sh install-pre-push` | 在 .git/hooks/pre-push 装拦截器（已自动） |
 | `./install.sh install-memory-mcp` | 修复 MCP memory server 持久化路径（跨机器必跑） |
+| `./install.sh install-coding-bridge-mcp` | 验证 coding-bridge MCP 配置（首次 install 自动调） |
 | `./tests/ci/smoke.sh` | 跑完整 6 步 CI 模拟（用临时 HOME，不污染本机） |
 
 ## 工作流
@@ -70,9 +71,24 @@ cd dotclaude-portable
 - 一次性备份 `mcp.json` 为 `.bak`
 - 跑完后**重启 Claude Code** 让新配置生效
 
+## coding-bridge MCP（External Review）
+
+`global/CLAUDE.md` 强制所有改动需经 `runReview()` 走外部 review MCP（codex / kimi / coding-bridge）。`coding-bridge` 是 GitHub 源 MCP：
+
+```bash
+./install.sh install-coding-bridge-mcp   # 验证 .mcp.json + execution_config.json 已配
+```
+
+行为：
+- 首次 `./install.sh --force` 会自动跑一次
+- 检查 `~/.claude/.mcp.json` 含 `coding-bridge` 段
+- 检查 `~/.claude/execution_config.json` 的 `allowed_tools` 含 `mcp__coding-bridge__*`
+- **不做网络预热**（首次实际启动由 Claude Code 触发，避免 install 阶段卡在 GitHub clone）
+- 跑完后**重启 Claude Code** 让新配置生效
+
 ## 详细能力说明
 
-刚装好想了解 **2 个 user command**（`/fix-permissions` / `/fullauto-prune`）、**1 个 user skill**（`fullauto`）、**1 个 hook**（`review-watchdog.mjs`）、**4 个 MCP server**（`context7` / `filesystem` / `mcp-deepwiki` / `memory`）的**触发方式、行为边界、典型场景、排错速查** → 读 [`EXTENSIONS.md`](./EXTENSIONS.md)。
+刚装好想了解 **2 个 user command**（`/fix-permissions` / `/fullauto-prune`）、**1 个 user skill**（`fullauto`）、**1 个 hook**（`review-watchdog.mjs`）、**5 个 MCP server**（`context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`）的**触发方式、行为边界、典型场景、排错速查** → 读 [`EXTENSIONS.md`](./EXTENSIONS.md)。
 
 ## CI 验证
 

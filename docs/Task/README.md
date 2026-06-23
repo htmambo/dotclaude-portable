@@ -5,6 +5,7 @@
 
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [coding-bridge MCP 集成 + macOS 兼容](Archive/2026-06/CODING_BRIDGE_AND_MACOS_PLAN.md) - 完成于 2026-06-23
 - ✅ [v1.0.4 收尾修复](Archive/2026-06/V1_0_4_RELEASE_FIX_PLAN.md) - 完成于 2026-06-19
 - ✅ [install-memory-mcp 子命令](Archive/2026-06/INSTALL_MCP_MEMORY_FIX_PLAN.md) - 完成于 2026-06-19
 - ✅ [review-watchdog hook 文档同步](Archive/2026-06/REVIEW_WATCHDOG_DOCS_PLAN.md) - 完成于 2026-06-19

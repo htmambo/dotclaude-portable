@@ -1,7 +1,7 @@
 # dotclaude-portable
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./VERSION)
+[![Version](https://img.shields.io/badge/version-1.0.5-blue.svg)](./VERSION)
 [![CI](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml/badge.svg)](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/htmambo/dotclaude-portable)](https://github.com/htmambo/dotclaude-portable/releases)
 
@@ -29,6 +29,7 @@ cd dotclaude-portable
 # 5. 跨机器补全
 ./install.sh install-statusline   # 把 ccstatusline-zh 注入本机 settings.json
 ./install.sh install-memory-mcp   # 修复 MCP memory 持久化路径
+./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（External Review）
 ./scripts/setup-plugins.sh        # 装 3 marketplace + 7 plugin
 ```
 
@@ -86,10 +87,11 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 | `global/json/settings.statusline.base.json` | 合并到 `settings.json` 的 `statusLine` 字段 | `install-statusline` 子命令 |
 | `hooks/review-watchdog.mjs` | `hooks/review-watchdog.mjs` | symlink（`HOOK_FILES` 动态扫描，新增 hook 丢进 `hooks/` 即可自动部署） |
 
-### 4 个 MCP（`global/json/mcp.base.json`）
+### 5 个 MCP（`global/json/mcp.base.json`）
 
-- `context7` / `filesystem` / `mcp-deepwiki` / `memory`
+- `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`
 - 全部用 `npx -y <pkg>` 启动，**首次使用 npx 自动下载**，无需预装
+- `coding-bridge` 走 `github:` 协议（`npx -y github:htmambo/coding-bridge-mcp`），对应 `global/CLAUDE.md` 的 External Review 抽象层；自动加进 `execution_config.json` 的 `allowed_tools`
 - 跨机器只需 `node` + `npx`；`install.sh` 渲染 `.mcp.json` 后生效
 
 ### `ccstatusline-zh`（非 plugin，是 statusLine 命令）
@@ -147,3 +149,9 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 
 - 用 **Git Bash** 跑 `./install.sh`
 - `MINGW*` / `MSYS*` / `CYGWIN*` 自动 fallback 到 `--copy` 模式
+
+## macOS
+
+- **1.0.5+ 已支持**：默认 macOS bash 3.2.57（Apple 因 GPLv3 拒绝升级）下 `./install.sh --force` 跑通，hooks 正确部署
+- Linux 同样可用（bash 4/5）
+- 系统需预装 `python3`（macOS 13+ 自带 / 旧版 `brew install python3`）与 `npx`（`brew install node`）

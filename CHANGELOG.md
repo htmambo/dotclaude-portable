@@ -4,6 +4,21 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [1.0.5] - 2026-06-23
+
+### Added
+
+- `coding-bridge` MCP server added to `global/json/mcp.base.json` (`npx -y github:htmambo/coding-bridge-mcp`) — External Review MCP for the `runReview()` abstraction layer documented in `global/CLAUDE.md`
+- `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` added to `global/json/execution_config.base.json` `permissions.allowed_tools` (auto-approval for the External Review MCP)
+- `install.sh` subcommand `install-coding-bridge-mcp`: lightweight verification that the MCP is wired into both `~/.claude/.mcp.json` and `~/.claude/execution_config.json` (no network call; Claude Code triggers the actual `npx` on first MCP use). Auto-invoked at the end of `./install.sh --force`
+- macOS support: install.sh now works on the default macOS bash 3.2.57 (Apple's GPLv3-frozen bash)
+
+### Fixed
+
+- **`install.sh` did not actually deploy hooks on macOS / any fresh install** — `deploy_hooks()` lacked `mkdir -p` for `${TARGET_HOME}/hooks`, and `HOOK_FILES` stored absolute paths that got double-prefixed when concatenated with `${src_dir}/`. Both fixed: `deploy_hooks` now creates the target dir; `HOOK_FILES` entries are stripped to `hooks/<name>` relative form
+- **`prune_backups` failed silently on macOS** — `mapfile` is a bash 4.0+ builtin, unavailable in macOS system bash 3.2.57. Replaced with `while IFS= read -r; ...; done` loop
+- **`install.sh` rejected macOS bash 3.2.57** — `requires bash >= 4.0` check relaxed to `>= 3.2` (macOS Apple bash 3.2 supports all the features the script actually uses: arrays, `[[ ]]`, `read -r`, process substitution)
+
 ## [1.0.4] - 2026-06-19
 
 ### Added

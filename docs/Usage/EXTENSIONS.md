@@ -5,7 +5,7 @@
 - **2 个 user command** —— `/fix-permissions` / `/fullauto-prune`
 - **1 个 user skill** —— `fullauto`(`/fullauto` 入口)
 - **1 个 hook** —— `review-watchdog.mjs`(PostToolUse 提示)
-- **4 个 MCP server** —— `context7` / `filesystem` / `mcp-deepwiki` / `memory`
+- **5 个 MCP server** —— `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`
 
 适用读者:已经按 [`INSTALL.md`](./INSTALL.md) 跑过 `./install.sh`,想深入了解每项扩展的**触发方式、行为边界、典型使用场景**。
 
@@ -199,9 +199,9 @@ Hook 是 Claude Code 在特定事件触发的**外部脚本**,exit 0 不阻塞,e
 
 ---
 
-## 4. MCP Servers(4 个)
+## 4. MCP Servers(5 个)
 
-MCP server 是**通过 `.mcp.json` 启动的外部进程**,Claude Code 通过 `mcp__<server>__*` 工具名调用。本仓库提供 4 个,全部用 `npx -y` 启动,无需预装。
+MCP server 是**通过 `.mcp.json` 启动的外部进程**,Claude Code 通过 `mcp__<server>__*` 工具名调用。本仓库提供 5 个,全部用 `npx -y` 启动,无需预装。
 
 源文件:`global/json/mcp.base.json`(base,不含 secret)→ `install.sh` 渲染占位 → 落到 `~/.claude/.mcp.json`
 
@@ -312,6 +312,32 @@ mcp__context7__query-docs({context7CompatibleLibraryID: "/fastapi/fastapi", topi
 - 默认会把图谱存到 npx 缓存目录(每次启动路径不同),导致**跨进程不共享**
 - **首次安装必跑**:`./install.sh install-memory-mcp`(幂等,已配则 return 0)
 - 详见 [`INSTALL.md`](./INSTALL.md#mcp-memory-修复) MCP memory 修复段
+
+---
+
+### 4.5 `coding-bridge` —— External Review MCP(必装)
+
+对应 `global/CLAUDE.md` 的 `runReview()` 抽象层(`codex` / `kimi` / `coding-bridge` 三 provider 中的 `coding-bridge` 实现)。
+
+**触发方式**:
+- Claude Code 会话内 `runReview({kind: "code", ...})` → `mcp__coding-bridge__review_code`
+- `runReview({kind: "plan"|"requirement", ...})` → `mcp__coding-bridge__review_plan`
+- 正常情况 Claude 自己会调;你也可用 `@coding-bridge` 提 prompt 显式触发
+
+**来源**:`https://github.com/htmambo/coding-bridge-mcp`(GitHub 源,非 npm 包)
+**启动命令**:`npx -y github:htmambo/coding-bridge-mcp`(npm 支持 `github:` 协议自动 clone+build)
+
+**首次使用**:GitHub 仓库 clone 较慢,首次调起会卡 10~30s;之后走 npx 缓存秒启。
+
+**验证**(必跑,确保 allowed_tools 注入成功):
+```bash
+./install.sh install-coding-bridge-mcp
+# 输出应包含 "coding-bridge MCP: ready"
+```
+
+**排错**:
+- 输出 `NOT in .../execution_config.json allowed_tools` → 重新 `./install.sh --force`
+- 报 `command not found` / `npx fail` → 检查 `node` / `npx` 是否在 PATH;查看 npx 错误细节
 
 ---
 
