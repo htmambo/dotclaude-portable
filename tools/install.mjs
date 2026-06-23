@@ -342,7 +342,7 @@ function installCodingBridgeJson(ctx) {
   try { d = JSON.parse(readFileSync(p.CLAUDE_JSON, 'utf8')); }
   catch (e) { warn(`invalid ${p.CLAUDE_JSON}: ${e.message}; skip`); return; }
 
-  const cb = d?.mcpServers?.coding-bridge;
+  const cb = d?.mcpServers?.['coding-bridge'];
   if (cb?.command === 'uvx') {
     log(`coding-bridge MCP: already in ${p.CLAUDE_JSON} mcpServers`);
     return;
