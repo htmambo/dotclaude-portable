@@ -4,6 +4,24 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [2.1.0] - 2026-06-23
+
+### Added
+
+- **`kimi` MCP fallback** —— CLAUDE.md §"Hard-coded fallback" 规定的 `coding-bridge → kimi` fallback 链现在真正可用：
+  - **kimi CLI 预检查**：`install-coding-bridge-mcp` 现在验证 kimi CLI 是否安装 + 版本是否 ≥ 0.17.0（kimimcp README §0 要求 ≥ 0.16.0，本仓库更严）；缺失/过低时 warn 让用户升级（输出 `kimi CLI: 0.19.0 ≥ 0.17.0 (/Users/hoping/.kimi-code/bin/kimi)` 格式）
+  - 用 `spawnSync(path, ['--version'])` 不开 shell（无 DEP0190）
+  - `compareSemver()` 内联实现（不引 semver 依赖）
+  - `mcp.base.json` 加 `kimi` 段（`uvx --from git+https://github.com/htmambo/kimimcp.git kimimcp`）
+  - `install-coding-bridge-json` 同步装 kimi（与 coding-bridge 同 uvx 启动，但**不需 env**——kimi 读 `~/.claude/kimi.json` 的 provider 配置自动获取 token）
+  - `install-coding-bridge-allow` 同步加 `mcp__kimi__kimi` 到 `permissions.allow`
+  - `install-coding-bridge-mcp` 验证双 MCP（输出 "kimi fallback MCP: uvx entry in ... CLAUDE.md fallback 链 ready"）
+
+### Fixed
+
+- **`install-coding-bridge-json` 短路 bug** —— 之前 coding-bridge 已存在就直接 return，导致 fallback 链上的 kimi 永远没机会加。改成独立判断两个 server，已存在跳过 + 缺失补齐
+- **关键认知**：`~/.claude/kimi.json` **不是** Claude Code 加载的目标——它是 Claude Code 切到 kimi 后端的 provider settings；`kimi` MCP 是**独立的** server（来自 htmambo/kimimcp 仓库），fallback 链的真工具是它
+
 ## [2.0.0] - 2026-06-23
 
 ### Changed (BREAKING)

@@ -23,6 +23,10 @@
         "PROVIDER": "${CODING_BRIDGE_PROVIDER:-xfyun-coding}",
         "API_KEY": "${CODING_BRIDGE_API_KEY}"
       }
+    },
+    "kimi": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/htmambo/kimimcp.git", "kimimcp"]
     }
   }
 }

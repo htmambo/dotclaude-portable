@@ -342,27 +342,46 @@ function installCodingBridgeJson(ctx) {
   try { d = JSON.parse(readFileSync(p.CLAUDE_JSON, 'utf8')); }
   catch (e) { warn(`invalid ${p.CLAUDE_JSON}: ${e.message}; skip`); return; }
 
-  const cb = d?.mcpServers?.['coding-bridge'];
-  if (cb?.command === 'uvx') {
-    log(`coding-bridge MCP: already in ${p.CLAUDE_JSON} mcpServers`);
+  // 拆开判断：coding-bridge / kimi 两个独立检查；已存在的跳过，缺失的补齐
+  const servers = d.mcpServers ?? {};
+  const hasCb = servers['coding-bridge']?.command === 'uvx';
+  const hasKimi = servers['kimi']?.command === 'uvx';
+  if (hasCb && hasKimi) {
+    log(`coding-bridge + kimi: already in ${p.CLAUDE_JSON} mcpServers`);
     return;
   }
-  if (ctx.dryRun) { log(`[dry-run] would add coding-bridge to ${p.CLAUDE_JSON} mcpServers`); return; }
+  if (ctx.dryRun) {
+    if (!hasCb) log(`[dry-run] would add coding-bridge to ${p.CLAUDE_JSON} mcpServers`);
+    if (!hasKimi) log(`[dry-run] would add kimi fallback to ${p.CLAUDE_JSON} mcpServers`);
+    return;
+  }
 
   backupOnce(p.CLAUDE_JSON);
-  const servers = d.mcpServers ?? {};
-  servers['coding-bridge'] = {
-    command: 'uvx',
-    args: ['--from', 'git+https://github.com/htmambo/coding-bridge-mcp.git', 'coding-bridge-mcp'],
-    transport: 'stdio',
-    env: {
-      PROVIDER: 'xfyun-coding',
-      API_KEY: '${CODING_BRIDGE_API_KEY}',
-    },
-  };
+  if (!hasCb) {
+    servers['coding-bridge'] = {
+      command: 'uvx',
+      args: ['--from', 'git+https://github.com/htmambo/coding-bridge-mcp.git', 'coding-bridge-mcp'],
+      transport: 'stdio',
+      env: {
+        PROVIDER: 'xfyun-coding',
+        API_KEY: '${CODING_BRIDGE_API_KEY}',
+      },
+    };
+  }
+  if (!hasKimi) {
+    // fallback：CLAUDE.md §"Hard-coded fallback" 规定 coding-bridge 失败时换 kimi
+    // （kimi 是 MCP server，不是 provider 配置；读 ~/.claude/kimi.json 是 Claude Code
+    // 切到 kimi 后端的 settings，与本仓库无关）
+    servers['kimi'] = {
+      command: 'uvx',
+      args: ['--from', 'git+https://github.com/htmambo/kimimcp.git', 'kimimcp'],
+      transport: 'stdio',
+    };
+  }
   d.mcpServers = servers;
   atomicWriteJSON(p.CLAUDE_JSON, d);
-  log(`added coding-bridge to ${p.CLAUDE_JSON} mcpServers`);
+  const added = [!hasCb && 'coding-bridge', !hasKimi && 'kimi'].filter(Boolean);
+  log(`added ${added.join(' + ')} to ${p.CLAUDE_JSON} mcpServers`);
 }
 
 // ─── coding-bridge allow（合并到 settings.json.permissions.allow） ──
@@ -376,11 +395,15 @@ function installCodingBridgeAllow(ctx) {
   try { d = JSON.parse(readFileSync(p.SETTINGS_JSON, 'utf8')); }
   catch (e) { warn(`invalid ${p.SETTINGS_JSON}: ${e.message}; skip`); return; }
 
-  const need = ['mcp__coding-bridge__review_code', 'mcp__coding-bridge__review_plan'];
+  const need = [
+    'mcp__coding-bridge__review_code',
+    'mcp__coding-bridge__review_plan',
+    'mcp__kimi__kimi',  // CLAUDE.md fallback 链：coding-bridge → kimi
+  ];
   const perms = d.permissions ?? {};
   const allow = perms.allow ?? [];
   const added = need.filter(t => !allow.includes(t));
-  if (added.length === 0) { log(`coding-bridge allowlist: already present; no change`); return; }
+  if (added.length === 0) { log(`coding-bridge + kimi allowlist: already present; no change`); return; }
   if (ctx.dryRun) { log(`[dry-run] would add ${added.join(', ')} to ${p.SETTINGS_JSON} permissions.allow`); return; }
 
   backupOnce(p.SETTINGS_JSON);
@@ -391,46 +414,102 @@ function installCodingBridgeAllow(ctx) {
   log(`added ${added.length} entry: ${added.join(', ')}`);
 }
 
-// ─── coding-bridge mcp verify ─────────────────────────
+// ─── kimi CLI 检测（kimimcp 子依赖） ──────────────────
+function findKimiCli(ctx) {
+  const pathEnv = process.env.PATH ?? '';
+  for (const dir of pathEnv.split(':')) {
+    if (dir && existsSync(join(dir, 'kimi'))) return join(dir, 'kimi');
+  }
+  for (const cand of [
+    join(ctx.home, '.local', 'bin', 'kimi'),
+    join(ctx.home, '.cargo', 'bin', 'kimi'),
+    '/usr/local/bin/kimi',
+  ]) {
+    if (existsSync(cand)) return cand;
+  }
+  return null;
+}
+
+function getKimiVersion(ctx) {
+  const path = findKimiCli(ctx);
+  if (!path) return null;
+  // kimi --version 输出格式：'kimi 0.17.0' 或 'kimi version 0.17.0'
+  // 用 spawnSync 不开 shell（避免 DEP0190）
+  const r = spawnSync(path, ['--version'], { encoding: 'utf8' });
+  const out = (r.stdout ?? '') + (r.stderr ?? '');
+  const m = out.match(/(\d+\.\d+\.\d+)/);
+  return m ? m[1] : null;
+}
+
+function compareSemver(a, b) {
+  // a >= b → true；不支持 pre-release / build metadata
+  const [aMaj, aMin, aPat] = a.split('.').map(Number);
+  const [bMaj, bMin, bPat] = b.split('.').map(Number);
+  if (aMaj !== bMaj) return aMaj > bMaj;
+  if (aMin !== bMin) return aMin > bMin;
+  return aPat >= bPat;
+}
+
+// ─── coding-bridge + kimi mcp verify ──────────────────
 function installCodingBridgeMcp(ctx) {
   const p = makePaths(ctx);
   let ok = true;
 
-  // 1. ~/.claude.json.mcpServers.coding-bridge
-  let cbOk = false;
+  // 1. ~/.claude.json.mcpServers.coding-bridge + kimi
+  let cbOk = false, kimiOk = false;
   if (existsSync(p.CLAUDE_JSON)) {
     try {
       const d = JSON.parse(readFileSync(p.CLAUDE_JSON, 'utf8'));
-      cbOk = d?.mcpServers?.['coding-bridge']?.command === 'uvx';
+      const s = d?.mcpServers ?? {};
+      cbOk = s['coding-bridge']?.command === 'uvx';
+      kimiOk = s['kimi']?.command === 'uvx';
     } catch {}
   }
   if (cbOk) log(`coding-bridge MCP: uvx entry in ${p.CLAUDE_JSON} (claude mcp list 可见)`);
   else { warn(`coding-bridge MCP: NOT in ${p.CLAUDE_JSON} mcpServers (run ./install.sh install-coding-bridge-json)`); ok = false; }
+  if (kimiOk) log(`kimi fallback MCP: uvx entry in ${p.CLAUDE_JSON} (CLAUDE.md fallback 链 ready)`);
+  else { warn(`kimi fallback MCP: NOT in ${p.CLAUDE_JSON} mcpServers (fallback chain breaks)`); ok = false; }
 
   // 2. uvx（用 PATH 探测 + 常见安装位置；不调 shell 子进程避免 DEP0190）
   const uvxFound = ['uvx'].some(name => {
-    // 先查 PATH
     const pathEnv = process.env.PATH ?? '';
     for (const dir of pathEnv.split(':')) {
       if (dir && existsSync(join(dir, name))) return true;
     }
-    // 常见用户安装位置（uv 默认装到 ~/.local/bin）
     const homeBin = join(ctx.home, '.local', 'bin', name);
     return existsSync(homeBin);
   });
   if (uvxFound) log(`uvx: installed`);
   else { warn(`uvx NOT installed; install with: curl -LsSf https://astral.sh/uv/install.sh | sh`); ok = false; }
 
-  // 3. env
+  // 3. kimi CLI 预检查（kimimcp 子依赖；README §0 要求 kimi ≥ v0.16.0，本仓库更严到 v0.17.0）
+  const kimiCli = findKimiCli(ctx);
+  if (!kimiCli) {
+    warn(`kimi CLI NOT installed; kimimcp 启动需要 kimi 作为子进程。安装: https://www.kimi.com/code/docs/kimi-code-cli/guides/getting-started.html`);
+    ok = false;
+  } else {
+    const ver = getKimiVersion(ctx);
+    const KIMI_MIN = '0.17.0';
+    if (!ver) {
+      warn(`kimi CLI found at ${kimiCli} but version parse failed; manual: kimi --version`);
+    } else if (!compareSemver(ver, KIMI_MIN)) {
+      warn(`kimi CLI ${ver} < ${KIMI_MIN} (kimimcp 要求 ≥ ${KIMI_MIN}); fallback 链可能 fail`);
+      ok = false;
+    } else {
+      log(`kimi CLI: ${ver} ≥ ${KIMI_MIN} (${kimiCli})`);
+    }
+  }
+
+  // 4. env（仅 coding-bridge 需要；kimi 读 ~/.claude/kimi.json 的 provider 配置）
   if (process.env.CODING_BRIDGE_API_KEY) {
     log(`CODING_BRIDGE_API_KEY: set (PROVIDER=${process.env.CODING_BRIDGE_PROVIDER ?? 'xfyun-coding'})`);
   } else { warn(`CODING_BRIDGE_API_KEY NOT set; export it in ~/.zshrc or pass via env`); ok = false; }
 
-  // 4. settings.json allowlist
+  // 4. settings.json allowlist（含 coding-bridge + kimi）
   installCodingBridgeAllow(ctx);
 
-  if (ok) log(`coding-bridge MCP: ready (restart Claude Code to activate)`);
-  else warn(`coding-bridge MCP: not fully wired; see warnings above`);
+  if (ok) log(`coding-bridge + kimi fallback: ready (restart Claude Code to activate)`);
+  else warn(`coding-bridge fallback chain not fully wired; see warnings above`);
 }
 
 // ─── install-statusline ──────────────────────────────

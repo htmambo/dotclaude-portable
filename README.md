@@ -1,7 +1,7 @@
 # dotclaude-portable
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](./VERSION)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](./VERSION)
 [![CI](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml/badge.svg)](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/htmambo/dotclaude-portable)](https://github.com/htmambo/dotclaude-portable/releases)
 
@@ -87,13 +87,14 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 | `global/json/settings.statusline.base.json` | 合并到 `settings.json` 的 `statusLine` 字段 | `install-statusline` 子命令 |
 | `hooks/review-watchdog.mjs` | `hooks/review-watchdog.mjs` | symlink（`HOOK_FILES` 动态扫描，新增 hook 丢进 `hooks/` 即可自动部署） |
 
-### 5 个 MCP（`global/json/mcp.base.json`）
+### 6 个 MCP（`global/json/mcp.base.json`）
 
-- `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`
-- 前 4 个用 `npx -y <pkg>` 启动；**`coding-bridge` 是 Python 项目**，需先装 `uvx`（`curl -LsSf https://astral.sh/uv/install.sh | sh`），启动命令是 `uvx --from git+https://github.com/htmambo/coding-bridge-mcp.git coding-bridge-mcp`
-- **关键**：Claude Code 真正加载 MCP server 是从 `~/.claude.json` 的 `mcpServers` 字段（不是 `~/.claude/.mcp.json`——后者是 OMC 等工具读的，不被 Claude Code 加载）。`install.sh install-coding-bridge-json` 把 coding-bridge 加到 `~/.claude.json`，**重启 Claude Code 后 `claude mcp list` 可见**
-- **必设环境变量**：`export CODING_BRIDGE_API_KEY=<your-key>`（写到 `~/.zshrc`）；可选 `CODING_BRIDGE_PROVIDER`（默认 `xfyun-coding`）
-- 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` 加进 `~/.claude/settings.json` 的 `permissions.allow`（独立子命令 `install-coding-bridge-allow`，含 sk- token 的其他字段原样保留）
+- `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge` / **`kimi`（fallback）**
+- 前 4 个用 `npx -y <pkg>` 启动；**`coding-bridge` + `kimi` 是 Python 项目**，需先装 `uvx`（`curl -LsSf https://astral.sh/uv/install.sh | sh`）
+- **关键**：Claude Code 真正加载 MCP server 是从 `~/.claude.json` 的 `mcpServers` 字段（不是 `~/.claude/.mcp.json`——后者是 OMC 等工具读的，不被 Claude Code 加载）
+- **CLAUDE.md fallback 链**：`coding-bridge → kimi`（CLAUDE.md §"Hard-coded fallback"）。coding-bridge 失败时 Claude 自动用 `mcp__kimi__kimi` 兜底
+- **必设环境变量**（仅 coding-bridge）：`export CODING_BRIDGE_API_KEY=<your-key>`（写到 `~/.zshrc`）；`kimi` 自动读 `~/.claude/kimi.json` 的 provider 配置
+- 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` + `mcp__kimi__kimi` 加进 `~/.claude/settings.json` 的 `permissions.allow`
 - 跨机器只需 `node` + `npx` + `uvx`
 
 ### `ccstatusline-zh`（非 plugin，是 statusLine 命令）
