@@ -407,9 +407,18 @@ function installCodingBridgeMcp(ctx) {
   if (cbOk) log(`coding-bridge MCP: uvx entry in ${p.CLAUDE_JSON} (claude mcp list 可见)`);
   else { warn(`coding-bridge MCP: NOT in ${p.CLAUDE_JSON} mcpServers (run ./install.sh install-coding-bridge-json)`); ok = false; }
 
-  // 2. uvx
-  const uvx = spawnSync('command', ['-v', 'uvx'], { shell: '/bin/bash', encoding: 'utf8' });
-  if (uvx.status === 0) log(`uvx: installed`);
+  // 2. uvx（用 PATH 探测 + 常见安装位置；不调 shell 子进程避免 DEP0190）
+  const uvxFound = ['uvx'].some(name => {
+    // 先查 PATH
+    const pathEnv = process.env.PATH ?? '';
+    for (const dir of pathEnv.split(':')) {
+      if (dir && existsSync(join(dir, name))) return true;
+    }
+    // 常见用户安装位置（uv 默认装到 ~/.local/bin）
+    const homeBin = join(ctx.home, '.local', 'bin', name);
+    return existsSync(homeBin);
+  });
+  if (uvxFound) log(`uvx: installed`);
   else { warn(`uvx NOT installed; install with: curl -LsSf https://astral.sh/uv/install.sh | sh`); ok = false; }
 
   // 3. env
