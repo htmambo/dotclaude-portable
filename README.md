@@ -40,6 +40,18 @@ cd dotclaude-portable
 ./install.sh --rollback 1 # 1=最新，2=上一个，3=再上一个
 ```
 
+## 日常更新:一条命令搞定
+
+```bash
+./scripts/pull-and-sync.sh
+```
+
+执行逻辑:fetch origin → 检测远端更新 → fast-forward pull → `./install.sh --check`。
+
+**适用场景**: 这是日常更新入口,推荐每次想拉新代码时跑(代替手动 `git pull`)。
+
+**不在范围内**(pull-and-sync 失败/异常时)按下面"已有机器 git pull 后"段手动补。
+
 ## 已有 dotclaude-portable 的机器,`git pull` 后
 
 绝大多数情况 `git pull` 后 **symlink 自动同步**,无需重跑 install.sh：
