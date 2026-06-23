@@ -14,6 +14,7 @@
 #   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
 #   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
 #   ./install.sh install-coding-bridge-allow # 合并 coding-bridge allow 到 settings.json
+#   ./install.sh install-coding-bridge-json  # 写 coding-bridge MCP 定义到 ~/.claude.json
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -40,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     install-memory-mcp) ACTION="install-memory-mcp"; shift ;;
     install-coding-bridge-mcp) ACTION="install-coding-bridge-mcp"; shift ;;
     install-coding-bridge-allow) ACTION="install-coding-bridge-allow"; shift ;;
+    install-coding-bridge-json) ACTION="install-coding-bridge-json"; shift ;;
     -h|--help)
       sed -n '2,15p' "$0" | sed 's/^# \?//'
       exit 0
@@ -100,6 +102,7 @@ do_install() {
   write_version_file
   inject_shell_profile
   do_install_pre_push
+  do_install_coding_bridge_json
   do_install_coding_bridge_mcp
   log "done. managed: $TARGET_HOME"
 }
@@ -464,20 +467,22 @@ PYEOF
 
 do_install_coding_bridge_mcp() {
   # coding-bridge 是 Python MCP（uvx 启动），不是 npx。
+  # **关键**：Claude Code 真正加载 MCP 是从 ~/.claude.json 的 mcpServers 字段（不是
+  # ~/.claude/.mcp.json，那个是 OMC 等工具读的）。1.0.5/1.0.6 都写错位置被证实无效。
   # 此处只做轻量验证，不强制网络预热（首次启动由 Claude Code 触发）。
-  local mcp_config="$HOME/.claude/.mcp.json"
+  local mcp_master="$HOME/.claude.json"
   local ok=1
 
-  # 1. 检查 .mcp.json 段（uvx 命令）
-  if [[ -f "$mcp_config" ]] && python3 -c "
+  # 1. 检查 ~/.claude.json 的 mcpServers.coding-bridge（Claude Code 真正读的位置）
+  if [[ -f "$mcp_master" ]] && python3 -c "
 import json, sys
 d = json.load(open(sys.argv[1]))
 cb = d.get('mcpServers', {}).get('coding-bridge', {})
 sys.exit(0 if cb.get('command') == 'uvx' else 1)
-" "$mcp_config" 2>/dev/null; then
-    log "coding-bridge MCP: uvx entry in $mcp_config"
+" "$mcp_master" 2>/dev/null; then
+    log "coding-bridge MCP: uvx entry in $mcp_master (claude mcp list 可见)"
   else
-    warn "coding-bridge MCP: NOT uvx in $mcp_config (rerun ./install.sh)"
+    warn "coding-bridge MCP: NOT in $mcp_master mcpServers (run ./install.sh install-coding-bridge-json)"
     ok=0
   fi
 
@@ -497,7 +502,7 @@ sys.exit(0 if cb.get('command') == 'uvx' else 1)
     ok=0
   fi
 
-  # 4. settings.json 允许列表（关键：Claude Code 实际读的是 settings.json 不是 execution_config）
+  # 4. settings.json 的 permissions.allow（工具调用允许列表；与 MCP server 定义是两层）
   do_install_coding_bridge_allow
 
   if [[ $ok -eq 1 ]]; then
@@ -505,6 +510,80 @@ sys.exit(0 if cb.get('command') == 'uvx' else 1)
   else
     warn "coding-bridge MCP: not fully wired; see warnings above"
   fi
+}
+
+do_install_coding_bridge_json() {
+  # 把 coding-bridge MCP server **定义** 写到 ~/.claude.json 的 mcpServers。
+  # 这是 Claude Code 真正加载 MCP server 的位置（用户 `claude mcp list` 显示来源）。
+  # 保留所有其他顶层字段（numStartups / projects / tipsHistory / userID / 等）原样不动。
+  #
+  # 软失败：fresh install（fake-home / 首次）没有 ~/.claude.json 是预期场景，
+  # 只 warn 不 exit。真实用户本机 bootstrap 过 Claude Code 后才有此文件。
+  local mcp_master="$HOME/.claude.json"
+  if [[ ! -f "$mcp_master" ]]; then
+    warn "$mcp_master not found; skip (run Claude Code once to bootstrap, then rerun)"
+    return 0
+  fi
+
+  # 幂等：已存在且 command=uvx 则跳过
+  if python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+cb = d.get('mcpServers', {}).get('coding-bridge', {})
+sys.exit(0 if cb.get('command') == 'uvx' else 1)
+" "$mcp_master" 2>/dev/null; then
+    log "coding-bridge MCP: already in $mcp_master mcpServers"
+    return 0
+  fi
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log "[dry-run] would add coding-bridge to $mcp_master mcpServers"
+    return 0
+  fi
+
+  # 备份（一次性，已有 .bak.* 则跳过）
+  if ! compgen -G "${mcp_master}.bak.*" >/dev/null 2>&1; then
+    local ts
+    ts="$(python3 -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S"))')"
+    cp -a "$mcp_master" "${mcp_master}.bak.${ts}" || { warn "backup failed: $mcp_master; skip"; return 0; }
+    log "backup: ${mcp_master}.bak.${ts}"
+  fi
+
+  # Python 深合并：保留所有顶层字段，只补 mcpServers.coding-bridge
+  # env.API_KEY 用 ${CODING_BRIDGE_API_KEY} 占位字符串（启动时由 shell 注入 env；
+  # JSON 层面不做变量替换，避免把 secret 写进 ~/.claude.json）
+  python3 - "$mcp_master" <<'PYEOF' || { warn "$mcp_master merge failed; skip"; return 0; }
+import json, os, sys, tempfile
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        d = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError) as e:
+    print(f"WARN: invalid {path}: {e}", file=sys.stderr)
+    sys.exit(1)
+
+servers = d.setdefault("mcpServers", {})
+if "coding-bridge" in servers:
+    print(f"[install-coding-bridge-json] already present; no change")
+    sys.exit(0)
+
+servers["coding-bridge"] = {
+    "command": "uvx",
+    "args": ["--from", "git+https://github.com/htmambo/coding-bridge-mcp.git", "coding-bridge-mcp"],
+    "transport": "stdio",
+    "env": {
+        "PROVIDER": "xfyun-coding",
+        "API_KEY": "${CODING_BRIDGE_API_KEY}"
+    }
+}
+
+# 原子写：先写 .tmp，再 rename()，防中断破坏 ~/.claude.json
+tmp = path + ".tmp"
+with open(tmp, "w") as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+os.replace(tmp, path)
+print(f"[install-coding-bridge-json] added coding-bridge to {path} mcpServers")
+PYEOF
 }
 
 do_install_coding_bridge_allow() {
@@ -567,4 +646,5 @@ case "$ACTION" in
   install-memory-mcp) do_install_memory_mcp ;;
   install-coding-bridge-mcp) do_install_coding_bridge_mcp ;;
   install-coding-bridge-allow) do_install_coding_bridge_allow ;;
+  install-coding-bridge-json) do_install_coding_bridge_json ;;
 esac

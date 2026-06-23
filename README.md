@@ -1,7 +1,7 @@
 # dotclaude-portable
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.6-blue.svg)](./VERSION)
+[![Version](https://img.shields.io/badge/version-1.0.7-blue.svg)](./VERSION)
 [![CI](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml/badge.svg)](https://github.com/htmambo/dotclaude-portable/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/v/release/htmambo/dotclaude-portable)](https://github.com/htmambo/dotclaude-portable/releases)
 
@@ -91,6 +91,7 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 
 - `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`
 - 前 4 个用 `npx -y <pkg>` 启动；**`coding-bridge` 是 Python 项目**，需先装 `uvx`（`curl -LsSf https://astral.sh/uv/install.sh | sh`），启动命令是 `uvx --from git+https://github.com/htmambo/coding-bridge-mcp.git coding-bridge-mcp`
+- **关键**：Claude Code 真正加载 MCP server 是从 `~/.claude.json` 的 `mcpServers` 字段（不是 `~/.claude/.mcp.json`——后者是 OMC 等工具读的，不被 Claude Code 加载）。`install.sh install-coding-bridge-json` 把 coding-bridge 加到 `~/.claude.json`，**重启 Claude Code 后 `claude mcp list` 可见**
 - **必设环境变量**：`export CODING_BRIDGE_API_KEY=<your-key>`（写到 `~/.zshrc`）；可选 `CODING_BRIDGE_PROVIDER`（默认 `xfyun-coding`）
 - 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` 加进 `~/.claude/settings.json` 的 `permissions.allow`（独立子命令 `install-coding-bridge-allow`，含 sk- token 的其他字段原样保留）
 - 跨机器只需 `node` + `npx` + `uvx`

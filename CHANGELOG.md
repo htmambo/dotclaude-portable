@@ -4,6 +4,18 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [1.0.7] - 2026-06-23
+
+### Fixed
+
+- **`coding-bridge` MCP 还是没装上（1.0.5 / 1.0.6 连续错位置）** — 第三次位置修正：
+  - `~/.claude/.mcp.json` 不是 Claude Code 加载 MCP 的位置（OMC 工具才读）
+  - **正确位置**：`~/.claude.json` 的 `mcpServers` 字段（用户 `claude mcp list` 显示来源）
+  - 新增子命令 `install-coding-bridge-json`：用 Python `dict.setdefault + update` 把 coding-bridge 加到 `~/.claude.json.mcpServers`；保留所有 40 个顶层字段（numStartups / projects / tipsHistory / userID 等）原样不动；幂等；首次备份 `.bak.<ts>`；原子写
+  - **`do_install_coding_bridge_json` 软失败**：fresh install 没有 `~/.claude.json` 是预期场景，只 warn 不 exit（CI smoke 不再因此 fail）
+  - **`do_install_coding_bridge_mcp` 改查 `~/.claude.json`**（不再查 `~/.claude/.mcp.json`）；`do_install` 末尾自动调 `install-coding-bridge-json`
+  - **用户本机真实验证**：`claude mcp list` 显示 6 个 MCP（含新增 `coding-bridge: uvx ...`）；`~/.claude.json` 顶层 40 个字段原样保留
+
 ## [1.0.6] - 2026-06-23
 
 ### Fixed

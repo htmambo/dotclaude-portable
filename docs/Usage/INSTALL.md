@@ -102,8 +102,17 @@ source ~/.zshrc
 
 | 子命令 | 作用 |
 |---|---|
-| `./install.sh install-coding-bridge-mcp` | 完整验证（uvx 命令 + uvx 安装 + env + allowlist），默认 install 末尾自动调 |
-| `./install.sh install-coding-bridge-allow` | 仅合并 allowlist 到 settings.json（不含 sk- token 的其他字段原样保留） |
+| `./install.sh install-coding-bridge-json` | 把 coding-bridge MCP server 定义写到 `~/.claude.json` 的 mcpServers（**Claude Code 真正加载 MCP 的位置**）。`./install.sh --force` 末尾自动调 |
+| `./install.sh install-coding-bridge-mcp` | 完整验证（uvx 命令 + uvx 安装 + env + allowlist），`./install.sh --force` 末尾自动调 |
+| `./install.sh install-coding-bridge-allow` | 把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` 加进 `~/.claude/settings.json` 的 `permissions.allow`（保留含 sk- token 的其他字段） |
+
+### 关键（**易踩坑**）
+
+`~/.claude/.mcp.json` **不是** Claude Code 加载 MCP 的位置——它是 OMC / 其他工具读的（filesystem MCP 也写在 `.mcp.json` 但 `claude mcp list` 看不到）。**真正位置**是 `~/.claude.json` 的 `mcpServers` 字段。
+
+所以 `./install.sh --force` 默认会做两件事：
+1. render `~/.claude/.mcp.json`（OMC 用）
+2. 合并到 `~/.claude.json.mcpServers`（**Claude Code 用**）
 
 ### 排错速查
 
