@@ -1,0 +1,653 @@
+#!/usr/bin/env node
+// tools/install.mjs — install.sh 的 Node.js 核心实现 (2.0.0)
+// 完整迁移：覆盖 install.sh 1.0.7 的所有子命令 + 行为。
+// Node.js >= 18 要求（macOS 用户已有 npx 自带；Linux 需 apt / nvm 装）。
+'use strict';
+
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  copyFileSync,
+  lstatSync,
+  readlinkSync,
+  unlinkSync,
+  chmodSync,
+  statSync,
+  renameSync,
+} from 'node:fs';
+import { dirname, join, basename, relative } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_DEFAULT = join(__dirname, '..');
+
+const MAX_BACKUPS = 3;
+
+// ─── 日志 ──────────────────────────────────────────────
+function log(msg) { console.log(`[install] ${msg}`); }
+function warn(msg) { console.warn(`[install][warn] ${msg}`); }
+function err(msg) { console.error(`[install][err] ${msg}`); }
+function fatal(msg) { process.exit(1); }
+
+// ─── 路径常量 ──────────────────────────────────────────
+function makePaths(ctx) {
+  return {
+    REPO_ROOT: ctx.repo,
+    TARGET_HOME: join(ctx.home, '.claude'),
+    BACKUP_ROOT: join(ctx.home, '.claude.backups'),
+    CLAUDE_JSON: join(ctx.home, '.claude.json'),
+    SETTINGS_JSON: join(ctx.home, '.claude', 'settings.json'),
+    MCP_JSON: join(ctx.home, '.claude', '.mcp.json'),
+    EXEC_CFG: join(ctx.home, '.claude', 'execution_config.json'),
+    HOOKS_DIR_REPO: join(ctx.repo, 'hooks'),
+    HOOKS_DIR_TARGET: join(ctx.home, '.claude', 'hooks'),
+  };
+}
+
+// ─── 备份 ──────────────────────────────────────────────
+function backupOnce(file) {
+  if (!existsSync(file)) return null;
+  // symlink 跳过（symlink 覆盖由外层处理）
+  try { if (lstatSync(file).isSymbolicLink()) return null; } catch {}
+  const dir = dirname(file);
+  const base = basename(file);
+  const existing = readdirSync(dir).filter(f => f.startsWith(base + '.bak.'));
+  if (existing.length > 0) return null;
+  const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+  const bak = `${file}.bak.${ts}`;
+  copyFileSync(file, bak);
+  log(`backup: ${bak}`);
+  return bak;
+}
+
+function atomicWriteFile(file, content) {
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, content);
+  renameSync(tmp, file);
+}
+
+function atomicWriteJSON(file, data) {
+  atomicWriteFile(file, JSON.stringify(data, null, 2) + '\n');
+}
+
+// ─── ${VAR} 占位符渲染 ─────────────────────────────────
+function renderTemplate(text, env = process.env) {
+  // 兼容 ${VAR} / ${VAR:-default}，缺失保留原字符串
+  return text.replace(/\$\{([^}]+)\}/g, (match, expr) => {
+    const idx = expr.indexOf(':-');
+    if (idx >= 0) {
+      const name = expr.slice(0, idx);
+      const def = expr.slice(idx + 2);
+      return env[name] ?? def;
+    }
+    return env[expr] ?? match;
+  });
+}
+
+// ─── 深合并（数组追加去重，对象递归）────────────────────
+function deepMerge(target, source) {
+  for (const [k, v] of Object.entries(source)) {
+    if (Array.isArray(v)) {
+      if (!Array.isArray(target[k])) target[k] = [];
+      for (const item of v) {
+        if (!target[k].includes(item)) target[k].push(item);
+      }
+    } else if (v && typeof v === 'object') {
+      target[k] = deepMerge(target[k] && typeof target[k] === 'object' && !Array.isArray(target[k]) ? target[k] : {}, v);
+    } else if (target[k] === undefined) {
+      target[k] = v;
+    }
+  }
+  return target;
+}
+
+// ─── symlink / copy 安装 ───────────────────────────────
+function installLinkOrCopy(src, dst, ctx) {
+  if (!existsSync(src)) fatal(`missing source: ${src}`);
+  mkdirSync(dirname(dst), { recursive: true });
+
+  // 已存在的处理
+  let existing = null;
+  try { existing = lstatSync(dst); } catch {}
+
+  if (existing?.isSymbolicLink()) {
+    const cur = readlinkSync(dst);
+    if (cur === src) {
+      log(`skip (linked): ${relative(ctx.home, dst)}`);
+      return;
+    }
+    warn(`existing symlink → ${cur}`);
+    if (!ctx.force) fatal(`use --force to replace`);
+    if (!ctx.dryRun) unlinkSync(dst);
+  } else if (existing) {
+    if (!ctx.force) warn(`exists: ${relative(ctx.home, dst)} (use --force to overwrite)`);
+    if (!ctx.dryRun) {
+      const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+      renameSync(dst, `${dst}.bak.${ts}`);
+    }
+  }
+
+  if (ctx.dryRun) {
+    log(`${ctx.mode}: ${relative(ctx.home, dst)} → ${relative(ctx.repo, src)}`);
+    return;
+  }
+  if (ctx.mode === 'symlink') {
+    symlinkSync(src, dst);
+    log(`link: ${relative(ctx.home, dst)} → ${relative(ctx.repo, src)}`);
+  } else {
+    copyFileSync(src, dst);
+    log(`copy: ${relative(ctx.home, dst)}`);
+  }
+  chmodSync(dst, 0o755);
+}
+
+// ─── HOOK_FILES 发现（相对路径）────────────────────────
+function discoverHooks(repoRoot) {
+  const dir = join(repoRoot, 'hooks');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(f => /\.(mjs|sh)$/.test(f))
+    .sort();
+}
+
+function deployHooks(ctx) {
+  const files = discoverHooks(ctx.repo);
+  if (files.length === 0) return;
+  mkdirSync(makePaths(ctx).HOOKS_DIR_TARGET, { recursive: true });
+  for (const h of files) {
+    installLinkOrCopy(join(ctx.repo, 'hooks', h), join(makePaths(ctx).HOOKS_DIR_TARGET, h), ctx);
+  }
+}
+
+// ─── MAP 安装（CLAUDE.md / COMMIT_TEMPLATE.md / base JSON） ─
+const MAP = [
+  ['global/CLAUDE.md', 'CLAUDE.md', 'symlink'],
+  ['global/COMMIT_TEMPLATE.md', 'COMMIT_TEMPLATE.md', 'symlink'],
+  ['global/json/execution_config.base.json', 'execution_config.json', 'render'],
+  ['global/json/mcp.base.json', '.mcp.json', 'render'],
+  ['global/json/.omc-version.base.json', '.omc-version.json', 'render'],
+  ['commands/fix-permissions.md', 'commands/fix-permissions.md', 'symlink'],
+  ['commands/fullauto-prune.md', 'commands/fullauto-prune.md', 'symlink'],
+  ['skills/fullauto/SKILL.md', 'skills/fullauto/SKILL.md', 'symlink'],
+];
+
+function renderInstall(src, dst, kind, ctx) {
+  const homeRel = relative(ctx.home, dst);
+  if (existsSync(dst) || (() => { try { return lstatSync(dst).isSymbolicLink(); } catch { return false; } })()) {
+    log(`skip render (exists): ${homeRel}`);
+    return;
+  }
+  mkdirSync(dirname(dst), { recursive: true });
+  if (kind === 'symlink') {
+    installLinkOrCopy(src, dst, ctx);
+    return;
+  }
+  // render
+  if (!existsSync(src)) fatal(`missing source: ${src}`);
+  const raw = readFileSync(src, 'utf8');
+  const out = renderTemplate(raw);
+  if (ctx.dryRun) {
+    log(`render+install: ${homeRel}`);
+    return;
+  }
+  atomicWriteFile(dst, out);
+  log(`render+install: ${homeRel}`);
+}
+
+// ─── 备份现有文件（首次安装）────────────────────────────
+function backupExisting(ctx) {
+  const p = makePaths(ctx);
+  mkdirSync(p.BACKUP_ROOT, { recursive: true });
+  const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+  const snap = join(p.BACKUP_ROOT, ts);
+  let touched = false;
+  for (const [, dstRel] of MAP) {
+    const dst = join(p.TARGET_HOME, dstRel);
+    if (existsSync(dst) || (() => { try { return lstatSync(dst).isSymbolicLink(); } catch { return false; } })()) {
+      touched = true; break;
+    }
+  }
+  if (!touched) return;
+  mkdirSync(snap, { recursive: true });
+  for (const [, dstRel] of MAP) {
+    const dst = join(p.TARGET_HOME, dstRel);
+    if (existsSync(dst) || (() => { try { return lstatSync(dst).isSymbolicLink(); } catch { return false; } })()) {
+      const relDst = relative(p.TARGET_HOME, dst);
+      mkdirSync(dirname(join(snap, relDst)), { recursive: true });
+      renameSync(dst, join(snap, relDst));
+    }
+  }
+  log(`backed up existing files to ${snap}`);
+  pruneBackups(p.BACKUP_ROOT);
+}
+
+function pruneBackups(backupRoot) {
+  if (!existsSync(backupRoot)) return;
+  const snaps = readdirSync(backupRoot)
+    .filter(d => { try { return statSync(join(backupRoot, d)).isDirectory(); } catch { return false; } })
+    .sort()
+    .reverse();
+  if (snaps.length > MAX_BACKUPS) {
+    for (const d of snaps.slice(MAX_BACKUPS)) {
+      log(`pruning old backup: ${join(backupRoot, d)}`);
+      if (!ctx.dryRun) rmSync(join(backupRoot, d), { recursive: true });
+    }
+  }
+}
+
+// ─── shell profile 注入 ────────────────────────────────
+function injectShellProfile(ctx) {
+  const marker = '# dotclaude-portable';
+  const line = 'export CLAUDE_HOME="$HOME/.claude"';
+  for (const f of [join(ctx.home, '.bashrc'), join(ctx.home, '.zshrc')]) {
+    if (!existsSync(f)) continue;
+    const txt = readFileSync(f, 'utf8');
+    if (txt.includes(marker)) { log(`shell profile tagged: ${f}`); continue; }
+    log(`appending to ${f}`);
+    if (!ctx.dryRun) writeFileSync(f, `\n${marker}\n${line}\n`, { flag: 'a' });
+  }
+}
+
+function stripShellProfile(ctx) {
+  const marker = '# dotclaude-portable';
+  for (const f of [join(ctx.home, '.bashrc'), join(ctx.home, '.zshrc')]) {
+    if (!existsSync(f)) continue;
+    let txt = readFileSync(f, 'utf8');
+    if (!txt.includes(marker)) continue;
+    log(`stripping dotclaude-portable block from ${f}`);
+    if (!ctx.dryRun) {
+      // 删 marker 行 + 紧跟的非空行 + 紧跟的 export 行 + 尾部空行
+      txt = txt.replace(new RegExp(`\\n?${marker}\\n.*\\n?`, 's'), '\n');
+      writeFileSync(f, txt);
+    }
+  }
+}
+
+// ─── version marker ──────────────────────────────────
+function writeVersionFile(ctx) {
+  const marker = join(ctx.home, '.claude', '.dotclaude-portable.version');
+  let ver = '0.2.0';
+  const verFile = join(ctx.repo, 'VERSION');
+  if (existsSync(verFile)) ver = readFileSync(verFile, 'utf8').trim();
+  if (ctx.dryRun) { log(`[dry-run] would write ${marker} (${ver})`); return; }
+  writeFileSync(marker, `repo=${ctx.repo}\nversion=${ver}\ninstalled_at=${new Date().toISOString()}\n`);
+}
+
+// ─── pre-push hook ────────────────────────────────────
+function installPrePush(ctx) {
+  const hook = join(ctx.repo, '.git', 'hooks', 'pre-push');
+  // bash 模板字符串（不解析 ${...}，运行时由 hook 自身解析 BASH_SOURCE）
+  const script = `#!/usr/bin/env bash
+set -e
+REPO_ROOT="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
+python3 "\${REPO_ROOT}/tools/scan-secrets.py" "\${REPO_ROOT}" || { echo '[pre-push] secret detected; abort' >&2; exit 1; }
+`;
+  log(`installing pre-push hook → ${hook}`);
+  if (ctx.dryRun) return;
+  mkdirSync(dirname(hook), { recursive: true });
+  writeFileSync(hook, script);
+  chmodSync(hook, 0o755);
+}
+
+// ─── memory MCP 修复 ──────────────────────────────────
+function installMemoryMcp(ctx) {
+  const mcpConfig = makePaths(ctx).MCP_JSON;
+  const memDir = join(ctx.home, '.claude', 'memory');
+  const memFile = join(memDir, 'memory.jsonl');
+  mkdirSync(memDir, { recursive: true });
+
+  let already = false;
+  if (existsSync(mcpConfig)) {
+    try {
+      const d = JSON.parse(readFileSync(mcpConfig, 'utf8'));
+      const cur = d?.mcpServers?.memory?.env?.MEMORY_FILE_PATH;
+      if (cur === memFile) already = true;
+    } catch {}
+  }
+  if (already) { log(`memory MCP already configured: ${memFile}`); return; }
+
+  if (ctx.dryRun) { log(`[dry-run] would patch ${mcpConfig}`); return; }
+  backupOnce(mcpConfig);
+
+  let d = {};
+  try { d = JSON.parse(readFileSync(mcpConfig, 'utf8')); } catch {}
+  const servers = d.mcpServers ?? {};
+  const mem = servers.memory ?? {};
+  mem.command ??= 'npx';
+  mem.args ??= ['-y', '@modelcontextprotocol/server-memory'];
+  mem.env = mem.env ?? {};
+  mem.env.MEMORY_FILE_PATH = memFile;
+  servers.memory = mem;
+  d.mcpServers = servers;
+  atomicWriteJSON(mcpConfig, d);
+  log(`memory MCP configured: MEMORY_FILE_PATH=${memFile}`);
+  warn(`restart Claude Code to activate new config`);
+}
+
+// ─── coding-bridge JSON（合并到 ~/.claude.json.mcpServers） ──
+function installCodingBridgeJson(ctx) {
+  const p = makePaths(ctx);
+  if (!existsSync(p.CLAUDE_JSON)) {
+    warn(`${p.CLAUDE_JSON} not found; skip (run Claude Code once to bootstrap, then rerun)`);
+    return;
+  }
+
+  let d;
+  try { d = JSON.parse(readFileSync(p.CLAUDE_JSON, 'utf8')); }
+  catch (e) { warn(`invalid ${p.CLAUDE_JSON}: ${e.message}; skip`); return; }
+
+  const cb = d?.mcpServers?.coding-bridge;
+  if (cb?.command === 'uvx') {
+    log(`coding-bridge MCP: already in ${p.CLAUDE_JSON} mcpServers`);
+    return;
+  }
+  if (ctx.dryRun) { log(`[dry-run] would add coding-bridge to ${p.CLAUDE_JSON} mcpServers`); return; }
+
+  backupOnce(p.CLAUDE_JSON);
+  const servers = d.mcpServers ?? {};
+  servers['coding-bridge'] = {
+    command: 'uvx',
+    args: ['--from', 'git+https://github.com/htmambo/coding-bridge-mcp.git', 'coding-bridge-mcp'],
+    transport: 'stdio',
+    env: {
+      PROVIDER: 'xfyun-coding',
+      API_KEY: '${CODING_BRIDGE_API_KEY}',
+    },
+  };
+  d.mcpServers = servers;
+  atomicWriteJSON(p.CLAUDE_JSON, d);
+  log(`added coding-bridge to ${p.CLAUDE_JSON} mcpServers`);
+}
+
+// ─── coding-bridge allow（合并到 settings.json.permissions.allow） ──
+function installCodingBridgeAllow(ctx) {
+  const p = makePaths(ctx);
+  if (!existsSync(p.SETTINGS_JSON)) {
+    warn(`${p.SETTINGS_JSON} not found; skip allowlist`);
+    return;
+  }
+  let d;
+  try { d = JSON.parse(readFileSync(p.SETTINGS_JSON, 'utf8')); }
+  catch (e) { warn(`invalid ${p.SETTINGS_JSON}: ${e.message}; skip`); return; }
+
+  const need = ['mcp__coding-bridge__review_code', 'mcp__coding-bridge__review_plan'];
+  const perms = d.permissions ?? {};
+  const allow = perms.allow ?? [];
+  const added = need.filter(t => !allow.includes(t));
+  if (added.length === 0) { log(`coding-bridge allowlist: already present; no change`); return; }
+  if (ctx.dryRun) { log(`[dry-run] would add ${added.join(', ')} to ${p.SETTINGS_JSON} permissions.allow`); return; }
+
+  backupOnce(p.SETTINGS_JSON);
+  allow.push(...added);
+  perms.allow = allow;
+  d.permissions = perms;
+  atomicWriteJSON(p.SETTINGS_JSON, d);
+  log(`added ${added.length} entry: ${added.join(', ')}`);
+}
+
+// ─── coding-bridge mcp verify ─────────────────────────
+function installCodingBridgeMcp(ctx) {
+  const p = makePaths(ctx);
+  let ok = true;
+
+  // 1. ~/.claude.json.mcpServers.coding-bridge
+  let cbOk = false;
+  if (existsSync(p.CLAUDE_JSON)) {
+    try {
+      const d = JSON.parse(readFileSync(p.CLAUDE_JSON, 'utf8'));
+      cbOk = d?.mcpServers?.['coding-bridge']?.command === 'uvx';
+    } catch {}
+  }
+  if (cbOk) log(`coding-bridge MCP: uvx entry in ${p.CLAUDE_JSON} (claude mcp list 可见)`);
+  else { warn(`coding-bridge MCP: NOT in ${p.CLAUDE_JSON} mcpServers (run ./install.sh install-coding-bridge-json)`); ok = false; }
+
+  // 2. uvx
+  const uvx = spawnSync('command', ['-v', 'uvx'], { shell: '/bin/bash', encoding: 'utf8' });
+  if (uvx.status === 0) log(`uvx: installed`);
+  else { warn(`uvx NOT installed; install with: curl -LsSf https://astral.sh/uv/install.sh | sh`); ok = false; }
+
+  // 3. env
+  if (process.env.CODING_BRIDGE_API_KEY) {
+    log(`CODING_BRIDGE_API_KEY: set (PROVIDER=${process.env.CODING_BRIDGE_PROVIDER ?? 'xfyun-coding'})`);
+  } else { warn(`CODING_BRIDGE_API_KEY NOT set; export it in ~/.zshrc or pass via env`); ok = false; }
+
+  // 4. settings.json allowlist
+  installCodingBridgeAllow(ctx);
+
+  if (ok) log(`coding-bridge MCP: ready (restart Claude Code to activate)`);
+  else warn(`coding-bridge MCP: not fully wired; see warnings above`);
+}
+
+// ─── install-statusline ──────────────────────────────
+function installStatusline(ctx) {
+  const base = join(ctx.repo, 'global', 'json', 'statusline.base.json');
+  const target = makePaths(ctx).SETTINGS_JSON;
+  if (!existsSync(base)) fatal(`missing base: ${base}`);
+  log(`merging statusLine into ${target}`);
+  if (ctx.dryRun) { log(`[dry-run] would merge: ${readFileSync(base, 'utf8').trim()}`); return; }
+  mkdirSync(dirname(target), { recursive: true });
+  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) backupOnce(target);
+  let tgt = {};
+  try { tgt = JSON.parse(readFileSync(target, 'utf8')); }
+  catch (e) { fatal(`invalid JSON in ${target}: ${e.message}`); }
+  const baseCfg = JSON.parse(readFileSync(base, 'utf8'));
+  tgt.statusLine = { ...(tgt.statusLine ?? {}), ...(baseCfg.statusLine ?? {}) };
+  atomicWriteJSON(target, tgt);
+  log(`statusLine merged`);
+}
+
+// ─── doctor ───────────────────────────────────────────
+function doctor(ctx) {
+  const py = spawnSync('python3', [join(ctx.repo, 'tools', 'scan-secrets.py'), ctx.repo], { encoding: 'utf8' });
+  process.stdout.write(py.stdout);
+  process.stderr.write(py.stderr);
+  if (py.status !== 0) fatal(`doctor: secret pattern(s) detected`);
+  log(`doctor: clean`);
+}
+
+// ─── check ────────────────────────────────────────────
+function check(ctx) {
+  const p = makePaths(ctx);
+  let bad = 0;
+  for (const [, dstRel] of MAP) {
+    const dst = join(p.TARGET_HOME, dstRel);
+    const homeRel = relative(ctx.home, dst);
+    if (!existsSync(dst)) { warn(`missing: ${homeRel}`); bad = 1; continue; }
+    let isLink = false;
+    try { isLink = lstatSync(dst).isSymbolicLink(); } catch {}
+    if (isLink) {
+      const t = readlinkSync(dst);
+      if (!existsSync(t)) { warn(`broken: ${homeRel} → ${t}`); bad = 1; }
+      else log(`ok: ${homeRel}`);
+    } else log(`ok (real): ${homeRel}`);
+  }
+  for (const h of discoverHooks(ctx.repo)) {
+    const dst = join(p.HOOKS_DIR_TARGET, h);
+    if (!existsSync(dst)) { warn(`missing hook: ${h}`); bad = 1; continue; }
+    let isLink = false;
+    try { isLink = lstatSync(dst).isSymbolicLink(); } catch {}
+    if (isLink && !existsSync(readlinkSync(dst))) { warn(`broken hook: ${h}`); bad = 1; continue; }
+    log(`ok hook: ${h}`);
+  }
+  if (bad) process.exit(1);
+}
+
+// ─── uninstall ───────────────────────────────────────
+function uninstall(ctx) {
+  const p = makePaths(ctx);
+  log(`uninstall — restoring from latest backup`);
+  if (existsSync(p.BACKUP_ROOT)) {
+    const snaps = readdirSync(p.BACKUP_ROOT)
+      .filter(d => { try { return statSync(join(p.BACKUP_ROOT, d)).isDirectory(); } catch { return false; } })
+      .sort()
+      .reverse();
+    if (snaps.length > 0 && !ctx.dryRun) {
+      const latest = join(p.BACKUP_ROOT, snaps[0]);
+      log(`restoring from ${latest}`);
+      spawnSync('cp', ['-a', `${latest}/.`, `${p.TARGET_HOME}/`]);
+    }
+  }
+  for (const [, dstRel] of MAP) {
+    const dst = join(p.TARGET_HOME, dstRel);
+    try {
+      if (lstatSync(dst).isSymbolicLink()) {
+        log(`unlink: ${relative(ctx.home, dst)}`);
+        if (!ctx.dryRun) unlinkSync(dst);
+      }
+    } catch {}
+  }
+  for (const h of discoverHooks(ctx.repo)) {
+    const dst = join(p.HOOKS_DIR_TARGET, h);
+    try {
+      if (lstatSync(dst).isSymbolicLink()) {
+        log(`unlink: hooks/${h}`);
+        if (!ctx.dryRun) unlinkSync(dst);
+      }
+    } catch {}
+  }
+  const marker = join(ctx.home, '.claude', '.dotclaude-portable.version');
+  if (existsSync(marker)) {
+    log(`removing version marker`);
+    if (!ctx.dryRun) rmSync(marker);
+  }
+  stripShellProfile(ctx);
+  log(`done`);
+}
+
+// ─── rollback ────────────────────────────────────────
+function rollback(ctx) {
+  const p = makePaths(ctx);
+  if (!existsSync(p.BACKUP_ROOT)) fatal(`no backups at ${p.BACKUP_ROOT}`);
+  const snaps = readdirSync(p.BACKUP_ROOT)
+    .filter(d => { try { return statSync(join(p.BACKUP_ROOT, d)).isDirectory(); } catch { return false; } })
+    .sort()
+    .reverse();
+  const snap = snaps[ctx.rollbackN - 1];
+  if (!snap) fatal(`no backup at slot #${ctx.rollbackN}`);
+  log(`rolling back to ${snap}`);
+  if (!ctx.dryRun) spawnSync('cp', ['-a', `${join(p.BACKUP_ROOT, snap)}/.`, `${p.TARGET_HOME}/`]);
+  log(`done`);
+}
+
+// ─── install 主流程 ───────────────────────────────────
+function install(ctx) {
+  const p = makePaths(ctx);
+  mkdirSync(p.TARGET_HOME, { recursive: true });
+  const marker = join(ctx.home, '.claude', '.dotclaude-portable.version');
+  if (!existsSync(marker)) backupExisting(ctx);
+  else log(`already managed; skipping full backup`);
+  for (const [src, dst, kind] of MAP) {
+    renderInstall(join(ctx.repo, src), join(p.TARGET_HOME, dst), kind, ctx);
+  }
+  deployHooks(ctx);
+  writeVersionFile(ctx);
+  injectShellProfile(ctx);
+  installPrePush(ctx);
+  installCodingBridgeJson(ctx);
+  installCodingBridgeMcp(ctx);
+  log(`done. managed: ${p.TARGET_HOME}`);
+}
+
+// ─── arg 解析 ─────────────────────────────────────────
+function printHelp() {
+  console.log(`# install.sh — 一键把仓库内配置同步到 ~/.claude/
+# 默认 symlink 模式（git pull 即生效）。
+# 用法:
+#   ./install.sh                 # 安装
+#   ./install.sh --dry-run       # 只打印动作
+#   ./install.sh --force         # 强制覆盖
+#   ./install.sh --copy          # 拷贝模式（Windows 兜底）
+#   ./install.sh --uninstall
+#   ./install.sh doctor          # secret 扫描
+#   ./install.sh --check         # symlink 健康巡检
+#   ./install.sh --rollback N    # 回滚到第 N 个备份
+#   ./install.sh install-pre-push  # 在 .git/hooks/pre-push 安装 secret 拦截
+#   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
+#   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
+#   ./install.sh install-coding-bridge-allow # 合并 coding-bridge allow 到 settings.json
+#   ./install.sh install-coding-bridge-json  # 写 coding-bridge MCP 定义到 ~/.claude.json`);
+}
+
+function parseArgs(argv) {
+  const positionals = [];
+  const opts = { mode: 'symlink', dryRun: false, force: false, rollbackN: 1 };
+
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    switch (a) {
+      case '--mode': opts.mode = argv[++i]; break;
+      case '--repo': opts.repo = argv[++i]; break;
+      case '--home': opts.home = argv[++i]; break;
+      case '--dry-run': opts.dryRun = true; break;
+      case '--force': opts.force = true; break;
+      case '--copy': opts.mode = 'copy'; break;
+      case '--uninstall': positionals.push('uninstall'); break;
+      case 'doctor': positionals.push('doctor'); break;
+      case '--check': positionals.push('check'); break;
+      case '--rollback':
+        opts.rollbackN = Number(argv[++i] || 1);
+        positionals.push('rollback'); break;
+      case 'install-pre-push': positionals.push('install-pre-push'); break;
+      case 'install-statusline': positionals.push('install-statusline'); break;
+      case 'install-memory-mcp': positionals.push('install-memory-mcp'); break;
+      case 'install-coding-bridge-mcp': positionals.push('install-coding-bridge-mcp'); break;
+      case 'install-coding-bridge-allow': positionals.push('install-coding-bridge-allow'); break;
+      case 'install-coding-bridge-json': positionals.push('install-coding-bridge-json'); break;
+      case '-h':
+      case '--help':
+        positionals.push('help'); break;
+      default:
+        if (a.startsWith('-')) {
+          err(`unknown arg: ${a}`);
+          process.exit(2);
+        }
+        positionals.push(a);
+    }
+  }
+
+  return {
+    action: positionals[0] ?? 'install',
+    ...opts,
+  };
+}
+
+// ─── main ─────────────────────────────────────────────
+async function main() {
+  const raw = parseArgs(process.argv.slice(2));
+  const ctx = {
+    action: raw.action,
+    mode: raw.mode,
+    repo: raw.repo,
+    home: raw.home,
+    dryRun: raw.dryRun,
+    force: raw.force,
+    rollbackN: raw.rollbackN,
+  };
+
+  const handlers = {
+    help: () => printHelp(),
+    install: () => install(ctx),
+    uninstall: () => uninstall(ctx),
+    doctor: () => doctor(ctx),
+    check: () => check(ctx),
+    rollback: () => rollback(ctx),
+    'install-pre-push': () => installPrePush(ctx),
+    'install-statusline': () => installStatusline(ctx),
+    'install-memory-mcp': () => installMemoryMcp(ctx),
+    'install-coding-bridge-mcp': () => installCodingBridgeMcp(ctx),
+    'install-coding-bridge-allow': () => installCodingBridgeAllow(ctx),
+    'install-coding-bridge-json': () => installCodingBridgeJson(ctx),
+  };
+
+  const fn = handlers[ctx.action];
+  if (!fn) { err(`unknown action: ${ctx.action}`); process.exit(2); }
+  fn();
+}
+
+main().catch(e => { console.error('[fatal]', e); process.exit(1); });

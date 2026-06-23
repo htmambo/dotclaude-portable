@@ -24,6 +24,12 @@ jobs:
           echo "runner.os=${{ runner.os }}"
           bash --version | head -1
           python3 --version
+          node --version || echo "node: not installed"
+
+      - name: setup node >= 18 (2.0.0+ requires it)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: dry-run (no side effects)
         shell: bash

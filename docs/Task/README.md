@@ -5,6 +5,7 @@
 
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [Node.js 核心迁移 (1.0.7 → 2.0.0)](Archive/2026-06/NODEJS_MIGRATION_PLAN.md) - 完成于 2026-06-23
 - ✅ [coding-bridge MCP 第三次位置修正 (1.0.6 → 1.0.7)](Archive/2026-06/CODING_BRIDGE_FIX_V3_PLAN.md) - 完成于 2026-06-23
 - ✅ [coding-bridge MCP 实际不可用修复 (1.0.5 残缺版补救)](Archive/2026-06/CODING_BRIDGE_FIX_PLAN.md) - 完成于 2026-06-23
 - ✅ [coding-bridge MCP 集成 + macOS 兼容](Archive/2026-06/CODING_BRIDGE_AND_MACOS_PLAN.md) - 完成于 2026-06-23

@@ -4,6 +4,25 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [2.0.0] - 2026-06-23
+
+### Changed (BREAKING)
+
+- **核心逻辑从 bash 迁到 Node.js** —— install.sh 缩到 ~50 行薄壳（arg 解析 + 平台检测 + delegate），所有配置管理逻辑迁到 `tools/install.mjs`：
+  - 内建 `fs.symlinkSync` / `fs.copyFileSync` / `fs.renameSync` 跨平台
+  - 内建 `JSON.parse` / `JSON.stringify`，**移除所有 3 段 Python heredoc**
+  - 内建 `${VAR}` / `${VAR:-default}` 占位符渲染（`renderTemplate`）
+  - 内建深合并（`deepMerge`）：数组追加去重，对象递归
+  - 内建 backup + atomic write（`backupOnce` + `atomicWriteJSON`）
+  - Node.js >= 18 要求；macOS 用户 npx 自带 / Linux 用系统 node
+- **macOS / Linux 兼容代码大幅简化** —— 移除 bash 3.2 mapfile / find -maxdepth 等历史包袱
+- **subcommand 行为保持不变** —— `install.sh --help` / `--dry-run` / `--force` / `--check` / `doctor` / `--uninstall` / `install-memory-mcp` / `install-statusline` / `install-coding-bridge-*` 全部等价
+
+### Fixed
+
+- **`installCodingBridgeMcp` 检查键 typo** —— `coding_bridge` → `coding-bridge`，导致 verify 误报（但 `install-coding-bridge-json` 写入路径正确）
+- **bash 模板字符串转义** —— `installPrePush` 用 `\${BASH_SOURCE[0]}` 避免 Node.js 误解析（运行时由 hook 自身解析）
+
 ## [1.0.7] - 2026-06-23
 
 ### Fixed
