@@ -10,11 +10,12 @@
   - \\d{8,12}:[A-Za-z0-9_-]{30,}  Telegram bot token
   - long hex >= 32 chars     generic high-entropy
 
-扫描范围：仓库根下除 .git/ 外的所有文本文件。
+扫描范围：仓库根下除 .git/ 外的所有文本文件，外加 .gitignore 排除的本地文件（如 .env）。
 退出码：0=clean，1=命中。
 """
 from __future__ import annotations
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -55,6 +56,7 @@ def _is_repo_scan() -> bool:
 def iter_files() -> list[Path]:
     out: list[Path] = []
     skip = SKIP_DEFAULT if _is_repo_scan() else SKIP_TIGHT
+    gitignored = _load_gitignored_files()
     for p in ROOT.rglob("*"):
         if not p.is_file():
             continue
@@ -62,8 +64,34 @@ def iter_files() -> list[Path]:
             continue
         if p.suffix.lower() in BINARY_EXT:
             continue
+        if p in gitignored:
+            continue
         out.append(p)
     return out
+
+
+def _load_gitignored_files() -> set[Path]:
+    """Collect files matched by .gitignore via `git ls-files --others --exclude-standard`.
+
+    目的：让 scan-secrets 不会因为扫到 .env 这种**已被 .gitignore 排除、本身不会被 commit**
+    的本地敏感文件而误报，阻断合法的 doc-only commit push。
+
+    降级：非 git 仓库 / git 不可用时返回空集，行为退回到 v1.0.x 的"全扫"模式，保持向后兼容。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-o", "--others", "--exclude-standard", "--ignored"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode != 0 or not result.stdout.strip():
+        return set()
+    return {ROOT / line.strip() for line in result.stdout.splitlines() if line.strip()}
 
 def scan_text(path: Path, text: str) -> list[tuple[str, int, str]]:
     hits: list[tuple[str, int, str]] = []
