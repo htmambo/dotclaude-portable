@@ -402,6 +402,8 @@ function installCodingBridgeJson(ctx) {
       env: {
         PROVIDER: 'xfyun-coding',
         API_KEY: '${CODING_BRIDGE_API_KEY}',
+        SPARK_API_KEY: '${SPARK_API_KEY}',
+        ARK_API_KEY: '${ARK_API_KEY}',
       },
     };
   }
@@ -538,9 +540,14 @@ function installCodingBridgeMcp(ctx) {
   }
 
   // 4. env（仅 coding-bridge 需要；kimi 读 ~/.claude/kimi.json 的 provider 配置）
-  if (process.env.CODING_BRIDGE_API_KEY) {
-    log(`CODING_BRIDGE_API_KEY: set (PROVIDER=${process.env.CODING_BRIDGE_PROVIDER ?? 'xfyun-coding'})`);
-  } else { warn(`CODING_BRIDGE_API_KEY NOT set; export it in ~/.zshrc or pass via env`); ok = false; }
+  // 新版：coding-bridge-mcp 内部按 provider 优先级匹配 key
+  // (API_KEY → SPARK_API_KEY / ARK_API_KEY)，所以三个 key 独立可设
+  const spark = process.env.SPARK_API_KEY || process.env.CODING_BRIDGE_API_KEY;
+  const ark = process.env.ARK_API_KEY || process.env.CODING_BRIDGE_API_KEY;
+  if (spark || ark) {
+    const provider = process.env.CODING_BRIDGE_PROVIDER || 'xfyun-coding';
+    log(`coding-bridge env: PROVIDER=${provider}; spark=${spark ? 'set' : 'unset'}; ark=${ark ? 'set' : 'unset'}`);
+  } else { warn(`coding-bridge KEY NOT set (SPARK_API_KEY / ARK_API_KEY / CODING_BRIDGE_API_KEY 任一); export it in ~/.zshrc`); ok = false; }
 
   // 4. settings.json allowlist（含 coding-bridge + kimi）
   installCodingBridgeAllow(ctx);

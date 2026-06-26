@@ -128,6 +128,23 @@ source ~/.zshrc
 
 刚装好想了解 **2 个 user command**（`/fix-permissions` / `/fullauto-prune`）、**1 个 user skill**（`fullauto`）、**1 个 hook**（`review-watchdog.mjs`）、**5 个 MCP server**（`context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`）的**触发方式、行为边界、典型场景、排错速查** → 读 [`EXTENSIONS.md`](./EXTENSIONS.md)。
 
+## 统一配置向导（推荐上手流程）
+
+不想记子命令？直接跑 `./tools/configure.mjs` —— 菜单驱动：
+
+1. **外部 Review 供应商**（coding-bridge / kimi / codex 切换 + API key → 仓库根 `.env`）
+2. **Claude Code 主供应商预设**（minimax / anyrouter / selfminimax / xunfei / default）
+3. **Statusline / HUD**（ccstatusline-zh / omc-hud）
+4. **辅助子模块状态**（只读：memory MCP / pre-push / pre-sync-docs）
+
+```bash
+./tools/configure.mjs           # 交互式
+./tools/configure.mjs --dry-run # 只打印动作不落盘（CI 用）
+./tools/configure.mjs --no-color
+```
+
+详细文档 → [`CONFIGURE.md`](./CONFIGURE.md)。
+
 ## CI 验证
 
 GitHub Actions 工作流位于 `.github/workflows/ci.yml`，在 push/PR 时自动跑：

@@ -36,3 +36,8 @@ global/json/*
 # 4) Backup / cache dirs we never want
 backups/
 ~/.claude.backups/
+
+# 5) configure.mjs 写入的本地 .env（API key / token 落盘处）
+.env
+.env.*
+!.env.example

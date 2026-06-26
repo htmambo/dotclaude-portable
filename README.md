@@ -33,6 +33,8 @@ cd dotclaude-portable
 ./scripts/setup-plugins.sh        # 装 3 marketplace + 7 plugin
 ```
 
+> 不想记子命令？跑 `./tools/configure.mjs` —— 菜单驱动配置 review 供应商 / API key / statusline，详见 [`docs/Usage/CONFIGURE.md`](./docs/Usage/CONFIGURE.md)。
+
 卸载 / 回滚：
 
 ```bash

@@ -21,7 +21,9 @@
       "args": ["--from", "git+https://github.com/htmambo/coding-bridge-mcp.git", "coding-bridge-mcp"],
       "env": {
         "PROVIDER": "${CODING_BRIDGE_PROVIDER:-xfyun-coding}",
-        "API_KEY": "${CODING_BRIDGE_API_KEY}"
+        "API_KEY": "${CODING_BRIDGE_API_KEY}",
+        "SPARK_API_KEY": "${SPARK_API_KEY}",
+        "ARK_API_KEY": "${ARK_API_KEY}"
       }
     },
     "kimi": {
