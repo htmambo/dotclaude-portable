@@ -3,6 +3,7 @@
 ## 活跃任务 (Active)
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [configure.mjs 外部审核落地 (TUI 状态机硬化 + KEY 文件权限)](Archive/2026-06/CONFIGURE_HARDEN_PLAN.md) - 完成于 2026-06-27
 - ✅ [hook 防护与预警鲁棒化](Archive/2026-06/HOOK_SIZE_WARN_PLAN.md) - 完成于 2026-06-23
 - ✅ [Node.js 核心迁移 (1.0.7 → 2.0.0)](Archive/2026-06/NODEJS_MIGRATION_PLAN.md) - 完成于 2026-06-23
 - ✅ [coding-bridge MCP 第三次位置修正 (1.0.6 → 1.0.7)](Archive/2026-06/CODING_BRIDGE_FIX_V3_PLAN.md) - 完成于 2026-06-23
