@@ -132,6 +132,7 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 | `global/json/execution_config.base.json` | `execution_config.json` | 渲染 cp（仅本机无时） |
 | `global/json/mcp.base.json` | `.mcp.json` | 渲染 cp（`${HOME}` 占位） |
 | `global/json/.omc-version.base.json` | `.omc-version.json` | 渲染 cp |
+| `global/json/ccstatusline.base.json` | `~/.config/ccstatusline/settings.json` | symlink（`install-ccstatusline` 子命令; 首次自动 `npm i -g ccstatusline-zh`） |
 | `commands/fix-permissions.md` | `commands/fix-permissions.md` | symlink |
 | `commands/fullauto-prune.md` | `commands/fullauto-prune.md` | symlink |
 | `skills/fullauto/SKILL.md` | `skills/fullauto/SKILL.md` | symlink |
@@ -150,11 +151,13 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 - 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` + `mcp__kimi__kimi` 加进 `~/.claude/settings.json` 的 `permissions.allow`
 - 跨机器只需 `node` + `npx` + `uvx`
 
-### `ccstatusline-zh`（非 plugin，是 statusLine 命令）
+### `ccstatusline-zh`（非 plugin，是 statusLine 命令 + 配置）
 
 - `settings.json` 含 sk- token 永不入库 → statusLine 单独脱敏
-- 用 `./install.sh install-statusline` 把 base 合并到本机 `settings.json`
+- 用 `./install.sh install-statusline` 把 `statusline.base.json` 合并到本机 `~/.claude.json` 的 `statusLine` 字段
+- 用 `./install.sh install-ccstatusline` 自动 `npm i -g ccstatusline-zh` + symlink `global/json/ccstatusline.base.json` 到 `~/.config/ccstatusline/settings.json`（主 `install()` 已自动调用，单独跑用于重装）
 - 不污染 env / permissions 等含 token 的其他字段
+- ⚠️ 改 `global/json/ccstatusline.base.json` 时,需手动同步 README（本仓库的 `sync-docs.mjs` 暂未覆盖 `global/json/` 章节）
 
 ### 7 个 plugin（`enabledPlugins`）
 

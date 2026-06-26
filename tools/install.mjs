@@ -562,6 +562,47 @@ function installStatusline(ctx) {
   log(`statusLine merged`);
 }
 
+// ─── ccstatusline-zh 安装 + 配置写入 ──────────────────
+// npm i -g 全局装包,配置 symlink 到仓库 base (和 CLAUDE.md 等一致)。
+// 已存在 settings.json(非 symlink) → backupOnce 后写入;已 symlink → skip。
+function ensureCcstatuslineInstalled(ctx) {
+  // 探测策略: PATH + 常见全局 bin 目录里直接查 `ccstatusline-zh` 二进制。
+  // 不用 `npx --no-install`(全局已装但 npx 缓存缺失会误报),也不用 `--version`
+  // 退出码(部分版本无此 flag,会读 stdin 而非 0 退出)。
+  const pathEnv = process.env.PATH ?? '';
+  const CANDIDATES = [
+    ...pathEnv.split(':').map(d => d && join(d, 'ccstatusline-zh')).filter(Boolean),
+    '/usr/local/bin/ccstatusline-zh',
+    join(ctx.home, '.local', 'bin', 'ccstatusline-zh'),
+  ];
+  const found = CANDIDATES.find(p => existsSync(p));
+
+  if (found) {
+    log(`ccstatusline-zh: installed (${found})`);
+    return;
+  }
+
+  log(`ccstatusline-zh not found; running: npm i -g ccstatusline-zh`);
+  if (ctx.dryRun) { log(`[dry-run] would run: npm install -g ccstatusline-zh`); return; }
+
+  const r = spawnSync('npm', ['install', '-g', 'ccstatusline-zh'], {
+    encoding: 'utf8', stdio: 'inherit',
+  });
+  if (r.status !== 0) {
+    fatal(`ccstatusline-zh install failed (npm exit ${r.status}); try manually: npm i -g ccstatusline-zh`);
+  }
+  log(`ccstatusline-zh: installed via npm i -g`);
+}
+
+function installCcstatusline(ctx) {
+  ensureCcstatuslineInstalled(ctx);
+  // 配置文件路径固定 ~/.config/ccstatusline/settings.json,与上游一致
+  const src = join(ctx.repo, 'global', 'json', 'ccstatusline.base.json');
+  const dst = join(ctx.home, '.config', 'ccstatusline', 'settings.json');
+  if (!existsSync(src)) fatal(`missing base: ${src}`);
+  installLinkOrCopy(src, dst, ctx);
+}
+
 // ─── doctor ───────────────────────────────────────────
 function doctor(ctx) {
   const py = spawnSync('python3', [join(ctx.repo, 'tools', 'scan-secrets.py'), ctx.repo], { encoding: 'utf8' });
@@ -672,6 +713,7 @@ function install(ctx) {
   installPrePush(ctx);
   installCodingBridgeJson(ctx);
   installCodingBridgeMcp(ctx);
+  installCcstatusline(ctx);
   log(`done. managed: ${p.TARGET_HOME}`);
 }
 
@@ -693,7 +735,8 @@ function printHelp() {
 #   ./install.sh install-memory-mcp  # 修复 MCP memory server 持久化路径
 #   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
 #   ./install.sh install-coding-bridge-allow # 合并 coding-bridge allow 到 settings.json
-#   ./install.sh install-coding-bridge-json  # 写 coding-bridge MCP 定义到 ~/.claude.json`);
+#   ./install.sh install-coding-bridge-json  # 写 coding-bridge MCP 定义到 ~/.claude.json
+#   ./install.sh install-ccstatusline  # 装 ccstatusline-zh 并 symlink 配置到 ~/.config/ccstatusline/`);
 }
 
 function parseArgs(argv) {
@@ -722,6 +765,7 @@ function parseArgs(argv) {
       case 'install-coding-bridge-mcp': positionals.push('install-coding-bridge-mcp'); break;
       case 'install-coding-bridge-allow': positionals.push('install-coding-bridge-allow'); break;
       case 'install-coding-bridge-json': positionals.push('install-coding-bridge-json'); break;
+      case 'install-ccstatusline': positionals.push('install-ccstatusline'); break;
       case '-h':
       case '--help':
         positionals.push('help'); break;
@@ -767,6 +811,7 @@ async function main() {
     'install-coding-bridge-mcp': () => installCodingBridgeMcp(ctx),
     'install-coding-bridge-allow': () => installCodingBridgeAllow(ctx),
     'install-coding-bridge-json': () => installCodingBridgeJson(ctx),
+    'install-ccstatusline': () => installCcstatusline(ctx),
   };
 
   const fn = handlers[ctx.action];

@@ -1,7 +1,7 @@
 {
   "statusLine": {
     "type": "command",
-    "command": "npx -y ccstatusline-zh@2.2.20",
+    "command": "npx -y ccstatusline-zh",
     "padding": 0,
     "refreshInterval": 10
   }

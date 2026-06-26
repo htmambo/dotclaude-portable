@@ -65,7 +65,7 @@ dotclaude-portable/
 │       ├── execution_config.base.json  # 纯结构
 │       ├── mcp.base.json               # 4 个 MCP，路径用 ${HOME}
 │       ├── .omc-version.base.json      # 纯版本号
-│       └── statusline.base.json        # ccstatusline-zh@2.2.20（已锁定）
+│       └── statusline.base.json        # npx -y ccstatusline-zh（latest）
 ├── commands/                # user slash commands
 ├── skills/                  # user skills
 ├── hooks/                   # review-watchdog.mjs（PostToolUse hook, 已落地）
