@@ -21,7 +21,7 @@
 //   ~/.claude/settings.json.permissions.allow — 同步 review tools allow
 'use strict';
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, statSync, copyFileSync, lstatSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, statSync, copyFileSync, lstatSync, chmodSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -60,8 +60,12 @@ function atomicWrite(file, content) {
   if (DRY_RUN) { out(c.dim(`[dry-run] would write ${file} (${content.length} bytes)`)); return; }
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, content);
+  // 强制 0600：API KEY 写入 ~/.claude.json 等敏感文件，绝不世界可读
+  writeFileSync(tmp, content, { mode: 0o600 });
   renameSync(tmp, file);
+  // 兜底：已存在的目标文件，OS 不一定保留 mode（rename 在同分区内可能复用 inode）；
+  // 显式 chmod 一次以确保权限收紧。
+  try { chmodSync(file, 0o600); } catch {}
 }
 function atomicWriteJSON(file, data) {
   atomicWrite(file, JSON.stringify(data, null, 2) + '\n');
@@ -91,8 +95,9 @@ function backupOnce(file) {
 function parseEnv(text) {
   const map = new Map();
   const lines = text.split('\n');
-  for (const line of lines) {
-    if (!line || /^\s*#/.test(line)) { map.set(`__raw_${lines.indexOf(line)}`, line); continue; }
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || /^\s*#/.test(line)) { map.set(`__raw_${i}`, line); continue; }
     const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (m) map.set(m[1], { value: m[2], line: line });
   }
@@ -103,6 +108,7 @@ function serializeEnv(map) {
     .map(v => (typeof v === 'string' ? v : v.line))
     .join('\n');
 }
+let _setEnvCounter = 0; // 防 setEnvKey 在同毫秒内连续调用冲突
 function setEnvKey(map, key, value) {
   const line = `${key}=${value}`;
   for (const [k, v] of map.entries()) {
@@ -112,7 +118,7 @@ function setEnvKey(map, key, value) {
       }
     }
   }
-  map.set(`__new_${Date.now()}_${key}`, { value, line });
+  map.set(`__new_${Date.now()}_${++_setEnvCounter}_${key}`, { value, line });
   return false;
 }
 function getEnvKey(map, key) {
@@ -574,27 +580,46 @@ const PRESET_EXCLUDE = new Set([
   'settings.local.json',
   'default.json',          // 占位（无 env 段）— 显式排除
 ]);
+// 仓库内项目自带预设目录（用户可见的命名 = 去掉 .base 后缀）
+const REPO_PRESET_DIR = join(REPO_ROOT, 'global', 'json');
 function _scanPresets() {
-  if (!existsSync(CLAUDE_DIR)) return [];
-  const files = readdirSync(CLAUDE_DIR)
-    .filter(f => f.endsWith('.json') && !PRESET_EXCLUDE.has(f))
-    .map(f => {
+  const seen = new Map(); // id → entry（~/.claude/ 优先；global/json/ 同名 skip）
+  // 1) ~/.claude/*.json（用户级，优先）
+  if (existsSync(CLAUDE_DIR)) {
+    for (const f of readdirSync(CLAUDE_DIR).filter(f => f.endsWith('.json') && !PRESET_EXCLUDE.has(f))) {
       const p = join(CLAUDE_DIR, f);
-      try { return { file: f, path: p, mtime: statSync(p).mtimeMs, json: readJSON(p) }; }
-      catch { return null; }
-    })
-    .filter(Boolean)
-    // 只要含 env 段的才算"预设"
-    .filter(it => it.json && it.json.env)
-    .sort((a, b) => b.mtime - a.mtime); // 最新修改排前
-  return files.map(it => {
+      try {
+        const stat = statSync(p);
+        const json = readJSON(p);
+        if (json && json.env) {
+          const id = f.replace(/\.json$/, '');
+          seen.set(id, { file: f, path: p, mtime: stat.mtimeMs, json, source: 'user' });
+        }
+      } catch {}
+    }
+  }
+  // 2) global/json/*.base.json（仓库自带，id 去掉 .base 后缀；与 user 同名时 skip）
+  if (existsSync(REPO_PRESET_DIR)) {
+    for (const f of readdirSync(REPO_PRESET_DIR).filter(f => f.endsWith('.base.json'))) {
+      const p = join(REPO_PRESET_DIR, f);
+      try {
+        const stat = statSync(p);
+        const json = readJSON(p);
+        if (json && json.env) {
+          const id = f.replace(/\.base\.json$/, '');
+          if (!seen.has(id)) seen.set(id, { file: f, path: p, mtime: stat.mtimeMs, json, source: 'repo' });
+        }
+      } catch {}
+    }
+  }
+  // 按 mtime 倒序
+  return [...seen.values()].sort((a, b) => b.mtime - a.mtime).map(it => {
     const env = it.json.env || {};
     const url = env.ANTHROPIC_BASE_URL || '（无 base_url）';
     const model = env.ANTHROPIC_MODEL || env.ANTHROPIC_DEFAULT_OPUS_MODEL || '';
-    // 截断 URL 到主机部分（去协议 + 路径）
     const shortUrl = url.replace(/^https?:\/\//, '').split('/')[0];
-    const desc = `${shortUrl}${model ? ' · ' + model : ''}`;
-    return { id: it.file.replace(/\.json$/, ''), label: it.file, file: it.file, description: desc };
+    const desc = `${shortUrl}${model ? ' · ' + model : ''}${it.source === 'repo' ? ' · 仓库' : ''}`;
+    return { id: it.file.replace(/(\.base)?\.json$/, ''), label: it.file, file: it.file, path: it.path, description: desc };
   });
 }
 async function configureMainPreset() {
@@ -616,10 +641,8 @@ async function configureMainPreset() {
   if (sel.quit) return 'quit';
   if (sel.back) return 'back';
 
-  const presetPath = join(REPO_ROOT, 'global', 'json', sel.choice.file.replace('.json', '.base.json'));
-  // 实际项目内预设可能在仓库根（用户看到的 minimax.json 等）
-  const userPresetPath = join(HOME, '.claude', sel.choice.file);
-  const fromPath = existsSync(userPresetPath) ? userPresetPath : presetPath;
+  // _scanPresets 已统一两个来源并把 path 填好；不再手动拼
+  const fromPath = sel.choice.path;
   if (!existsSync(fromPath)) {
     err(`找不到预设源：${fromPath}`);
     return 'continue';
@@ -715,9 +738,10 @@ function _applyKeysToClaudeJson(dotenv, dryRun) {
   cb.env.PROVIDER = provider;
   // 通用 API_KEY 字段：写当前选中 provider 的实际 key（xfyun→SPARK、volcengine→ARK）
   // coding-bridge-mcp 内部优先匹配 SPARK_API_KEY / ARK_API_KEY；API_KEY 作为兜底
+  // 严格相等匹配（不 startsWith）：未来新增 provider 需显式 if-else，避免误选 key
   let activeKey = '';
-  if (provider.startsWith('xfyun')) activeKey = dotenv.SPARK_API_KEY || dotenv.CODING_BRIDGE_API_KEY || '';
-  else if (provider.startsWith('volcengine')) activeKey = dotenv.ARK_API_KEY || dotenv.CODING_BRIDGE_API_KEY || '';
+  if (provider === 'xfyun-coding') activeKey = dotenv.SPARK_API_KEY || dotenv.CODING_BRIDGE_API_KEY || '';
+  else if (provider === 'volcengine-coding') activeKey = dotenv.ARK_API_KEY || dotenv.CODING_BRIDGE_API_KEY || '';
   else activeKey = dotenv.CODING_BRIDGE_API_KEY || '';
   cb.env.API_KEY = activeKey;
   // 保留两个专属 key（即使当前 provider 不用，也给未来切换用）
@@ -728,11 +752,10 @@ function _applyKeysToClaudeJson(dotenv, dryRun) {
   atomicWriteJSON(CLAUDE_JSON, cfg);
   return cfg;
 }
-async function configureApply() {
-  title('应用 / 重启 Claude Code');
-  // 1. 检查 .env 完整性（.env 是 dotenv 格式，不是 JSON）
+// 抽公共逻辑：解析 .env → 校验 → 写 KEY → 检测 Claude Code
+// 返回 { lines, hasError, dotenvFlat, haveSpark, haveArk, haveProvider } 给两条 caller 共用
+function _applyCore() {
   const dotenv = loadEnv().map;
-  // 读 .env 的值（去掉哨兵）
   const dotenvFlat = {};
   for (const v of dotenv.values()) {
     if (typeof v === 'object' && v.line) {
@@ -740,34 +763,44 @@ async function configureApply() {
       if (m) dotenvFlat[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
     }
   }
-  if (Object.keys(dotenvFlat).length === 0) {
-    err(`找不到 ${ENV_FILE} 或内容为空；先在 "外部 Review 供应商" 设一个 KEY`);
-    return 'continue';
-  }
   const haveSpark = !!dotenvFlat.SPARK_API_KEY;
   const haveArk = !!dotenvFlat.ARK_API_KEY;
   const haveProvider = !!dotenvFlat.CODING_BRIDGE_PROVIDER;
-  if (!haveSpark && !haveArk) {
-    err(`.env 里没有 SPARK_API_KEY / ARK_API_KEY 任一；先设 KEY 再应用`);
-    return 'continue';
-  }
-  info(`  .env 状态: SPARK_API_KEY=${haveSpark ? '✓' : '✗'}  ARK_API_KEY=${haveArk ? '✓' : '✗'}  CODING_BRIDGE_PROVIDER=${haveProvider ? dotenvFlat.CODING_BRIDGE_PROVIDER : '(未设)'}`);
-  // 2. 写 KEY 到 ~/.claude.json mcpServers.coding-bridge.env
-  if (DRY_RUN) {
-    info(`[dry-run] would write ${CLAUDE_JSON} mcpServers.coding-bridge.env`);
+  const lines = [];
+  let hasError = false;
+  if (Object.keys(dotenvFlat).length === 0) {
+    lines.push(c.red(`  ✗ 找不到 ${ENV_FILE} 或为空`));
+    lines.push(c.dim('  先在 "外部 Review 供应商" 设一个 KEY'));
+    hasError = true;
+  } else if (!haveSpark && !haveArk) {
+    lines.push(c.red('  ✗ .env 没有 SPARK_API_KEY / ARK_API_KEY 任一'));
+    lines.push(c.dim('  先在 "外部 Review 供应商" 设 KEY 再应用'));
+    hasError = true;
   } else {
-    _applyKeysToClaudeJson(dotenvFlat, false);
-    ok(`已写入 KEY 字面值到 ${CLAUDE_JSON} mcpServers.coding-bridge.env`);
+    if (DRY_RUN) {
+      lines.push(c.yellow(`  [dry-run] would write ${CLAUDE_JSON} mcpServers.coding-bridge.env`));
+    } else {
+      _applyKeysToClaudeJson(dotenvFlat, false);
+      lines.push(c.green(`  ✓ KEY 字面值已写入 ${CLAUDE_JSON}`));
+      lines.push(c.dim(`    mcpServers.coding-bridge.env：PROVIDER + SPARK_API_KEY + ARK_API_KEY`));
+    }
+    const cc = _detectClaudeCode();
+    if (cc.running) {
+      lines.push(c.yellow(`  ⚠ 检测到 Claude Code 进程 (pid: ${cc.pids.join(', ')})`));
+      lines.push(c.dim('    请手动退出 (Ctrl-C / Cmd-Q) 后重新启动'));
+      lines.push(c.dim(`    新启动会读 ${CLAUDE_JSON} 新的 env 段，KEY 字面值直接生效`));
+    } else {
+      lines.push(c.green('  ✓ 未检测到 Claude Code 进程；下次启动自动应用'));
+    }
+    lines.push('');
+    lines.push(c.dim(`  env 状态: SPARK=${haveSpark ? '✓' : '✗'}  ARK=${haveArk ? '✓' : '✗'}  PROVIDER=${dotenvFlat.CODING_BRIDGE_PROVIDER || '未设'}`));
   }
-  // 3. 检测 Claude Code 进程
-  const cc = _detectClaudeCode();
-  if (cc.running) {
-    warn(`检测到 Claude Code 进程 (pid: ${cc.pids.join(', ')})`);
-    info(`  请手动退出 Claude Code (Ctrl-C 或 Cmd-Q) 后重新启动`);
-    info(`  重新启动会读 ${CLAUDE_JSON} 新的 env 段，KEY 字面值直接生效`);
-  } else {
-    info(`未检测到 Claude Code 进程；下次启动会自动应用`);
-  }
+  return { lines, hasError, dotenvFlat, haveSpark, haveArk, haveProvider };
+}
+async function configureApply() {
+  title('应用 / 重启 Claude Code');
+  const { lines, hasError } = _applyCore();
+  for (const l of lines) out(l);
   return 'continue';
 }
 
@@ -909,16 +942,43 @@ function _renderScreen(state) {
 
 // 业务回调：每个主项对应一个"入口面板"
 function _getEntryPanel(mainIdx) {
-  switch (TOP_MENU[mainIdx].id) {
-    case 'review': return _panelReviewTop();
-    case 'preset': return _panelPreset();
-    case 'apply': return _panelApply();
-    case 'subs': return _panelSubsystems();
-    case 'subs': return _panelSubsystems();
-    case 'show': return _panelShowEnv();
+  const id = TOP_MENU[mainIdx].id;
+  let panel;
+  switch (id) {
+    case 'review': panel = _panelReviewTop(); break;
+    case 'preset': panel = _panelPreset(); break;
+    case 'apply':  panel = _panelApply(); break;
+    case 'subs':   panel = _panelSubsystems(); break;
+    case 'show':   panel = _panelShowEnv(); break;
+    default:       return { kind: 'empty' };
   }
-  return { kind: 'empty' };
+  panel._entryMainId = id; // 在 _getEntryPanel 内部 / message 出栈时识别入口来源
+  return panel;
 }
+
+// ─── 面板状态机显式 API（push/replace/pop） ───
+// _context 标识当前 sub-panel 业务派发点；与 breadcrumb 文本解耦
+//   context 序列（与 mainIdx 对应）：
+//     'review'            — 外部 Review 供应商入口
+//     'review-provider'   — Review > 供应商（pick）
+//     'review-key'        — Review > KEY（input/confirm 流程中）
+//     'preset'            — 主供应商预设入口
+//     'apply'             — 应用入口
+//     'subs'              — 辅助子模块
+//     'show'              — 查看 .env
+const _panelOps = {
+  // push：新面板入栈；保留旧面板在 panelStack 顶（message 出栈时会 pop 恢复）
+  push(state, panel) {
+    if (process.env.DEBUG_TUI === '1') console.error(`[TUI] push depth=${state.panelStack.length + 1} kind=${panel.kind}`);
+    state.panelStack.push(state.panel);
+    state.panel = panel;
+  },
+  // replace：直接替换当前面板（不增栈深；message 出栈不动）
+  replace(state, panel) {
+    if (process.env.DEBUG_TUI === '1') console.error(`[TUI] replace depth=${state.panelStack.length} kind=${panel.kind}`);
+    state.panel = panel;
+  },
+};
 
 // ─── Review 业务完整 TUI 化（替代 _handleSubPick 的降级路径） ──
 // 3 个独立 action：迅飞 KEY / 火山 KEY / 供应商
@@ -932,17 +992,17 @@ function _tuiReviewRun(state) {
   if (action.id === 'provider') {
     // 选供应商：push pick 面板
     const cur = readEnvKey(action.envKey) || 'xfyun-coding';
-    state.panelStack.push(state.panel);
-    state.panel = {
+    _panelOps.push(state, {
       kind: 'pick',
       breadcrumb: '主菜单 > 外部 Review 供应商 > 供应商',
       title: 'coding-bridge 后端',
       options: CODING_BRIDGE_PROVIDERS.map(p => ({ id: p.id, label: p.label, description: p.description })),
       defaultIdx: CODING_BRIDGE_PROVIDERS.findIndex(p => p.id === cur),
-    };
+    });
     state.subIdx = state.panel.defaultIdx ?? 0;
     state._tuiEnvKey = action.envKey; // finalize 时用
     state._tuiSyncFn = () => syncClaudeJsonCodingBridge(CODING_BRIDGE_PROVIDERS[state.subIdx].id);
+    state._context = 'review-provider';
     state._render();
   } else {
     // 迅飞 KEY / 火山 KEY：直接走 input 面板
@@ -962,7 +1022,7 @@ function _tuiReviewProviderSelected(state) {
   state._tuiUpdated.add(state._tuiEnvKey);
   if (state._tuiSyncFn) { try { state._tuiSyncFn(); } catch (e) { err(`同步失败: ${e.message}`); } }
   saveEnv(state._tuiEnv, state._tuiUpdated.size > 0);
-  state.panel = {
+  _panelOps.replace(state, {
     kind: 'message',
     breadcrumb: '主菜单 > 外部 Review 供应商 > 供应商 > 结果',
     title: '✓ 已切换供应商',
@@ -972,32 +1032,33 @@ function _tuiReviewProviderSelected(state) {
       c.dim('  KEY 是独立的（见 "迅飞 KEY" / "火山 KEY"）'),
       c.dim('  按任意键返回'),
     ],
-  };
+  });
   state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null; state._tuiSyncFn = null;
+  state._context = 'review';
   state._render();
 }
 function _tuiPushKeyPanel(state, envKeyName, friendlyName, syncFn) {
-  state.panelStack.push(state.panel);
   state._tuiEnvKey = envKeyName; state._tuiFriendly = friendlyName; state._tuiSyncFn = syncFn;
+  state._context = 'review-key';
   const cur = readEnvKey(envKeyName);
   if (cur && cur.trim() !== '') {
-    state.panel = {
+    _panelOps.push(state, {
       kind: 'confirm',
       breadcrumb: '主菜单 > 外部 Review 供应商 > API key',
       title: `检测到已存在 ${envKeyName}`,
       question: `当前: ${maskValue(envKeyName, cur)}  →  是否修改？`,
       defaultYes: false,
-    };
+    });
     state._tuiKeyConfirm = true;
   } else {
-    state.panel = {
+    _panelOps.push(state, {
       kind: 'input',
       breadcrumb: '主菜单 > 外部 Review 供应商 > API key',
       title: `请输入 ${friendlyName}`,
       prompt: envKeyName,
       hidden: false, // 明文显示方便复制粘贴后核对
       default: '',
-    };
+    });
     state._tuiKeyInput = true;
   }
   state._render();
@@ -1010,7 +1071,7 @@ function _tuiFinalizeReview(state) {
   }
   // 弹一个 message 面板展示结果
   // 注意：input panel 也没 push（confirm y 也没 push）——panelStack 顶仍是 review top
-  state.panel = {
+  _panelOps.replace(state, {
     kind: 'message',
     breadcrumb: '主菜单 > 外部 Review 供应商 > 结果',
     title: '✓ 已更新 .env',
@@ -1020,9 +1081,10 @@ function _tuiFinalizeReview(state) {
       c.dim('  提示：手动 `export $(cat .env | xargs)` 或在 shell rc 里 source .env 即可生效'),
       c.dim('  按任意键返回'),
     ],
-  };
+  });
   // 清临时状态
   state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null; state._tuiFriendly = null; state._tuiSyncFn = null; state._tuiCbId = null; state._tuiKeyConfirm = false; state._tuiKeyInput = false;
+  state._context = 'review';
   state._render();
 }
 
@@ -1030,16 +1092,15 @@ function _tuiFinalizeReview(state) {
 // 选中某预设 → 合并 env 到 ~/.claude/settings.json（深合并，保留其它字段）→ 弹结果
 function _tuiPresetApply(state) {
   const choice = state.panel.options[state.subIdx];
-  const presetPath = join(CLAUDE_DIR, choice.file);
+  // _scanPresets 已填好完整 path（含 ~/.claude/ 或 global/json/ 来源）
+  const presetPath = choice.path;
   if (!existsSync(presetPath)) {
-    state.panelStack.push(state.panel);
-    state.panel = { kind: 'message', breadcrumb: state.panel.breadcrumb, title: '✗ 预设文件不存在', lines: [c.red(`  ${presetPath}`)] };
+    _panelOps.push(state, { kind: 'message', breadcrumb: state.panel.breadcrumb, title: '✗ 预设文件不存在', lines: [c.red(`  ${presetPath}`)] });
     state._render(); return;
   }
   const preset = readJSON(presetPath);
   if (!preset?.env) {
-    state.panelStack.push(state.panel);
-    state.panel = { kind: 'message', breadcrumb: state.panel.breadcrumb, title: '✗ 预设缺少 env 段', lines: [c.dim(`  ${presetPath}`)] };
+    _panelOps.push(state, { kind: 'message', breadcrumb: state.panel.breadcrumb, title: '✗ 预设缺少 env 段', lines: [c.dim(`  ${presetPath}`)] });
     state._render(); return;
   }
   const settings = readJSON(SETTINGS_JSON) || {};
@@ -1049,10 +1110,8 @@ function _tuiPresetApply(state) {
   if (preset.model) settings.model = preset.model;
   atomicWriteJSON(SETTINGS_JSON, settings);
   // 弹结果 message
-  const addedKeys = Object.keys(preset.env).filter(k => !beforeKeys.includes(k) || settings.env[k] !== (settings.env[k] /* sanity */));
   const allKeys = Object.keys(preset.env);
-  state.panelStack.push(state.panel);
-  state.panel = {
+  _panelOps.push(state, {
     kind: 'message',
     breadcrumb: '主菜单 > Claude Code 主供应商预设 > 结果',
     title: '✓ 已合并预设到 ~/.claude/settings.json',
@@ -1065,57 +1124,20 @@ function _tuiPresetApply(state) {
       c.yellow('  提示：重启 Claude Code 让 env 生效'),
       c.dim('  按任意键返回主菜单'),
     ],
-  };
+  });
   state._render();
 }
 
 // ─── Apply TUI 化 ──────────────────────────────────────
-// 复用 configureApply 逻辑，结果以 message 面板展示
+// 复用 _applyCore，结果以 message 面板展示
 function _tuiApply(state) {
-  const dotenvMap = loadEnv().map;
-  const dotenvFlat = {};
-  for (const v of dotenvMap.values()) {
-    if (typeof v === 'object' && v.line) {
-      const m = v.line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
-      if (m) dotenvFlat[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
-    }
-  }
-  const lines = [];
-  let hasError = false;
-  if (Object.keys(dotenvFlat).length === 0) {
-    lines.push(c.red('  ✗ 找不到 .env 或为空'));
-    lines.push(c.dim('  先在 "外部 Review 供应商" 设一个 KEY'));
-    hasError = true;
-  } else {
-    const haveSpark = !!dotenvFlat.SPARK_API_KEY;
-    const haveArk = !!dotenvFlat.ARK_API_KEY;
-    if (!haveSpark && !haveArk) {
-      lines.push(c.red('  ✗ .env 没有 SPARK_API_KEY / ARK_API_KEY 任一'));
-      lines.push(c.dim('  先在 "外部 Review 供应商" 设 KEY 再应用'));
-      hasError = true;
-    } else {
-      if (!DRY_RUN) _applyKeysToClaudeJson(dotenvFlat, false);
-      lines.push(c.green(`  ✓ KEY 字面值已写入 ${CLAUDE_JSON}`));
-      lines.push(c.dim(`    mcpServers.coding-bridge.env：PROVIDER + SPARK_API_KEY + ARK_API_KEY`));
-      const cc = _detectClaudeCode();
-      if (cc.running) {
-        lines.push(c.yellow(`  ⚠ 检测到 Claude Code 进程 (pid: ${cc.pids.join(', ')})`));
-        lines.push(c.dim(`    请手动退出 (Ctrl-C / Cmd-Q) 后重新启动`));
-        lines.push(c.dim(`    新启动会读 ${CLAUDE_JSON} 新的 env 段，KEY 字面值直接生效`));
-      } else {
-        lines.push(c.green(`  ✓ 未检测到 Claude Code 进程；下次启动自动应用`));
-      }
-      lines.push('');
-      lines.push(c.dim(`  env 状态: SPARK=${haveSpark ? '✓' : '✗'}  ARK=${haveArk ? '✓' : '✗'}  PROVIDER=${dotenvFlat.CODING_BRIDGE_PROVIDER || '未设'}`));
-    }
-  }
-  state.panelStack.push(state.panel);
-  state.panel = {
+  const { lines, hasError } = _applyCore();
+  _panelOps.push(state, {
     kind: 'message',
     breadcrumb: '主菜单 > 应用 > 结果',
     title: hasError ? '✗ 应用失败' : '✓ 应用完成',
     lines,
-  };
+  });
   state._render();
 }
 
@@ -1272,6 +1294,10 @@ async function main() {
     focus: 'main', // 初始焦点在主菜单（让用户先选主项再操作子菜单）
     panel: _getEntryPanel(0),
     panelStack: [],
+    // _context 标识当前 sub-panel 业务派发点；与 breadcrumb 文本解耦
+    //   入口面板：'review' / 'preset' / 'apply' / 'subs' / 'show'
+    //   下钻面板：'review-provider' / 'review-key'
+    _context: 'review', // 初始化 = mainIdx 0 = review
     // TUI 化业务临时态
     _tuiEnv: null, _tuiUpdated: null, _tuiCbId: null,
     _tuiEnvKey: null, _tuiFriendly: null, _tuiSyncFn: null,
@@ -1366,6 +1392,7 @@ async function main() {
       state.panel = _getEntryPanel(state.mainIdx);
       state.subIdx = (state.panel.kind === 'pick' ? (state.panel.defaultIdx ?? 0) : 0);
       state.panelStack = [];
+      state._context = TOP_MENU[state.mainIdx].id;
       state.focus = 'main';
       state._render(); continue;
     }
@@ -1375,6 +1402,7 @@ async function main() {
       state.panel = _getEntryPanel(state.mainIdx);
       state.subIdx = (state.panel.kind === 'pick' ? (state.panel.defaultIdx ?? 0) : 0);
       state.panelStack = [];
+      state._context = TOP_MENU[state.mainIdx].id;
       state.focus = 'main';
       state._render(); continue;
     }
@@ -1395,6 +1423,7 @@ async function main() {
         state.panel = _getEntryPanel(state.mainIdx);
         state.subIdx = (state.panel.kind === 'pick' ? (state.panel.defaultIdx ?? 0) : 0);
         state.panelStack = [];
+        state._context = TOP_MENU[state.mainIdx].id;
       }
       state._render(); continue;
     }
@@ -1406,6 +1435,7 @@ async function main() {
         state.mainIdx = n; state.panel = _getEntryPanel(state.mainIdx);
         state.subIdx = (state.panel.kind === 'pick' ? (state.panel.defaultIdx ?? 0) : 0);
         state.panelStack = [];
+        state._context = TOP_MENU[state.mainIdx].id;
       }
       state._render(); continue;
     }
@@ -1418,16 +1448,14 @@ async function main() {
       }
       if (k === 'enter') {
         // 派发：review / preset 走 TUI 流程；其它业务走降级路径
-        if (TOP_MENU[state.mainIdx].id === 'review') {
-          if (state.panel.breadcrumb && state.panel.breadcrumb.includes('外部 Review 供应商 > 供应商')) {
-            // 选完供应商 → 写 env + 弹结果
-            _tuiReviewProviderSelected(state);
-          } else {
-            _tuiReviewRun(state);
-          }
-        } else if (TOP_MENU[state.mainIdx].id === 'preset') {
+        if (state._context === 'review-provider') {
+          // 选完供应商 → 写 env + 弹结果
+          _tuiReviewProviderSelected(state);
+        } else if (state._context === 'review') {
+          _tuiReviewRun(state);
+        } else if (state._context === 'preset') {
           _tuiPresetApply(state);
-        } else if (TOP_MENU[state.mainIdx].id === 'apply') {
+        } else if (state._context === 'apply') {
           _tuiApply(state);
         } else {
           await _handleSubPickLegacy(state);
@@ -1443,6 +1471,10 @@ async function main() {
         // 原 panel 对象已缓存旧状态（isSet=false 等）；不重生成会显示陈旧
         if (state.panel._topEntry) {
           state.panel = _getEntryPanel(state.mainIdx);
+          state._context = TOP_MENU[state.mainIdx].id; // 重生成后同步 _context
+        } else {
+          // 非入口面板（说明是 _tuiPresetApply / _tuiApply 的下钻 message 出栈）
+          // 沿用之前 _tui* 设置的 _context（已在 _tui* 函数里设好）
         }
         state.subIdx = (state.panel.kind === 'pick' ? (state.panel.defaultIdx ?? 0) : 0);
         state.focus = 'sub'; // 弹出后保留子区焦点（用户可继续操作子项）
