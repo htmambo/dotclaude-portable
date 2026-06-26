@@ -139,4 +139,12 @@ echo "[pull-sync] running install --check..."
   exit 3
 }
 
+# ── 刷新 pre-commit hook 模板(可选,防模板升级断层) ────────
+# pre-commit hook 模板内嵌在 install.mjs,模板升级时已装 hook 不会自动更新
+# pull 后顺手刷新一次,确保下次 commit 用最新逻辑
+if [[ -f tools/install.mjs ]] && command -v node >/dev/null 2>&1; then
+  echo "[pull-sync] refreshing pre-commit hook template..."
+  node tools/install.mjs install-pre-sync-docs-hook >/dev/null 2>&1 || true
+fi
+
 echo "[pull-sync] done."

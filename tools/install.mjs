@@ -297,6 +297,11 @@ if [[ "\$STAGED" == *"hooks/"* ]] \\
    || [[ "\$STAGED" == *"commands/"* ]] \\
    || [[ "\$STAGED" == *"skills/"* ]] \\
    || [[ "\$STAGED" == *"scripts/sync-docs.mjs"* ]]; then
+  # Node 缺失时跳过检查(不要因为环境问题阻塞提交)
+  if ! command -v node >/dev/null 2>&1; then
+    echo '[dotclaude-portable pre-commit] node not found; skipping sync-docs check' >&2
+    exit 0
+  fi
   REPO_ROOT="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
   node "\${REPO_ROOT}/scripts/sync-docs.mjs" --check
 fi
