@@ -2,6 +2,22 @@
 
 ## External Review MCP (Auto-Invocation Specification)
 
+> **Critical clarification: `runReview()` is a verbal alias, NOT an implemented function.**
+>
+> Throughout this document you will see references to "call `runReview({...})`". This is shorthand for "use the External Review MCP". There is **no `runReview()` function** in the runtime — neither in shell, nor in `tools/`, nor in any hook. The actual call sites are **direct MCP tool invocations** by the main assistant:
+>
+> | `kind` | Actual tool call |
+> |---|---|
+> | `"code"` | `mcp__coding-bridge__review_code({CODE, cd, REQUIREMENTS})` |
+> | `"plan"` / `"requirement"` | `mcp__coding-bridge__review_plan({PLAN, cd, CONTEXT})` |
+> | generic chat / fallback | `mcp__coding-bridge__chat({PROMPT, cd})` |
+> | fallback `kimi` provider | `mcp__kimi__kimi({PROMPT, cd})` |
+> | fallback `codex` provider | `mcp__codex__codex({PROMPT, cd})` (forbidden `model` / `yolo`) |
+>
+> Provider resolution at call time: session state > `REVIEW_PROVIDER` env var > hard-coded fallback chain `coding-bridge → kimi` (codex is NOT in the fallback chain — see §1.4).
+>
+> **Why this clarification exists**: an earlier audit (2026-06-27) found that the literal string `runReview` only appears in documentation, in `hooks/review-watchdog.mjs` (which *grep-detects* it in transcripts, not implements it), and in `tools/configure.mjs` (which only writes `.env` fields). No runtime code dispatches `REVIEW_PROVIDER` to a provider. If you read "call `runReview()`" and try to invoke a function, you will waste a turn — call the MCP tool directly.
+
 At any moment, you must consider how the current process can collaborate with the **External Review MCP** (codex / kimi / coding-bridge) as a guarantee for your objective and comprehensive analysis.
 You **must execute** the following steps:
 
@@ -307,7 +323,7 @@ Return value:
 
 **Must observe**:
 
-- The provider is determined by `REVIEW_PROVIDER`; **business code does not write provider literals** (no occurrence of `mcp__codex__codex` / `mcp__kimi__kimi` / `mcp__coding-bridge__*` strings)
+- The provider is determined by `REVIEW_PROVIDER`. **The provider literal lives only in the main assistant's MCP tool call** (per §1.0) — no runtime shell script, hook, or `tools/*` script dispatches by `REVIEW_PROVIDER`. If you find yourself wanting to "wrap" the call, you're reinventing the verbal alias — just call the MCP tool directly.
 - Save `SESSION_ID` on every call for subsequent multi-turn dialogue
 - The `cd` parameter must point to an existing directory, otherwise the tool will silently fail
 - codex uses `sandbox="read-only"`; kimi / coding-bridge use PROMPT text constraints
