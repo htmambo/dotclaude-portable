@@ -1265,6 +1265,16 @@ function _panelShowEnv() {
   };
 }
 
+// 非 TTY 模式 / 降级路径用：打印关键 env 键
+async function showCurrentEnv() {
+  const panel = _panelShowEnv();
+  out('');
+  out(c.bold(panel.title));
+  for (const line of panel.lines) out(line);
+  out('');
+  return 'continue';
+}
+
 async function main() {
   // 一次性 header（非 TTY 模式直接走原简单循环）
   if (!IS_TTY) {
