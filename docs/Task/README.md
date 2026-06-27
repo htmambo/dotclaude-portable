@@ -3,6 +3,7 @@
 ## 活跃任务 (Active)
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [预设 json 增加 title/description 厂商描述](Archive/2026-06/PRESET_META_TITLE_DESC_PLAN.md) - 完成于 2026-06-27
 - ✅ [主供应商预设「当前在用」识别修复](Archive/2026-06/PRESET_ACTIVE_DETECT_PLAN.md) - 完成于 2026-06-27
 - ✅ [代码审查修复 2026-06-27](Archive/2026-06/CODE_REVIEW_FIX_2026_06_27_PLAN.md) - 完成于 2026-06-27
 - ✅ [tools/*.mjs 外部审核修复（17 项 finding + kimi 兜底发现 showCurrentEnv）](Archive/2026-06/TOOLS_MJS_REVIEW_FIX_PLAN.md) - 完成于 2026-06-27

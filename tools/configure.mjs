@@ -642,8 +642,12 @@ function _scanPresets() {
     // 仅布尔比对结果；token 等 secret 不进入 description，绝不回显明文
     const active = Object.keys(env).length > 0
       && Object.keys(env).every(k => Object.prototype.hasOwnProperty.call(curEnv, k) && curEnv[k] === env[k]);
-    const desc = `${shortUrl}${model ? ' · ' + model : ''}${it.source === 'repo' ? ' · 仓库' : ''}`;
-    return { id: it.file.replace(/(\.base)?\.json$/, ''), label: it.file, file: it.file, path: it.path, description: desc, active };
+    // 厂商元数据：title/description 为惰性顶层 key（同 permissions/hooks，从不合并进 settings.json）
+    const metaTitle = typeof it.json.title === 'string' && it.json.title.trim() ? it.json.title.trim() : '';
+    const metaDesc = typeof it.json.description === 'string' && it.json.description.trim() ? it.json.description.trim() : '';
+    const urlModel = `${shortUrl}${model ? ' · ' + model : ''}${it.source === 'repo' ? ' · 仓库' : ''}`;
+    const desc = metaTitle ? `${metaTitle}（${urlModel}）${metaDesc ? ' · ' + metaDesc : ''}` : urlModel;
+    return { id: it.file.replace(/(\.base)?\.json$/, ''), label: it.file, file: it.file, path: it.path, description: desc, active, title: metaTitle, metaDesc };
   });
 }
 async function configureMainPreset() {
@@ -663,7 +667,8 @@ async function configureMainPreset() {
   info(`  检测到 ${presets.length} 个预设：${presets.map(p => p.id).join(', ')}`);
   const activePreset = presets.find(p => p.active);
   if (activePreset) {
-    ok(`当前在用：${c.bold(activePreset.file)}（env 与 settings.json 完全匹配）`);
+    const tag = activePreset.title ? `${c.bold(activePreset.title)}（${activePreset.file}）` : c.bold(activePreset.file);
+    ok(`当前在用：${tag}（env 与 settings.json 完全匹配）`);
   } else {
     warn(`当前 settings.json 的 env 未完整匹配任何预设（可能为手动修改或混合来源）`);
   }
