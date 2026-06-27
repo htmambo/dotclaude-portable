@@ -23,6 +23,7 @@ import {
 import { dirname, join, basename, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { backupOnce } from './lib/backup.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DEFAULT = join(__dirname, '..');
@@ -51,20 +52,8 @@ function makePaths(ctx) {
 }
 
 // ─── 备份 ──────────────────────────────────────────────
-function backupOnce(file) {
-  if (!existsSync(file)) return null;
-  // symlink 跳过（symlink 覆盖由外层处理）
-  try { if (lstatSync(file).isSymbolicLink()) return null; } catch {}
-  const dir = dirname(file);
-  const base = basename(file);
-  const existing = readdirSync(dir).filter(f => f.startsWith(base + '.bak.'));
-  if (existing.length > 0) return null;
-  const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
-  const bak = `${file}.bak.${ts}`;
-  copyFileSync(file, bak);
-  log(`backup: ${bak}`);
-  return bak;
-}
+// backupOnce 已抽到 ./lib/backup.mjs（参见 import）
+// 行为不变：仅首次备份；symlink 跳过；命名 `<file>.bak.YYYYMMDDHHMMSS`
 
 function atomicWriteFile(file, content) {
   const tmp = `${file}.tmp`;
@@ -350,7 +339,8 @@ function installMemoryMcp(ctx) {
   if (already) { log(`memory MCP already configured: ${memFile}`); return; }
 
   if (ctx.dryRun) { log(`[dry-run] would patch ${mcpConfig}`); return; }
-  backupOnce(mcpConfig);
+  const memBak = backupOnce(mcpConfig);
+  if (memBak) log(`backup: ${memBak}`);
 
   let d = {};
   try { d = JSON.parse(readFileSync(mcpConfig, 'utf8')); } catch {}
@@ -393,7 +383,7 @@ function installCodingBridgeJson(ctx) {
     return;
   }
 
-  backupOnce(p.CLAUDE_JSON);
+  const cjBak = backupOnce(p.CLAUDE_JSON); if (cjBak) log(`backup: ${cjBak}`);
   if (!hasCb) {
     servers['coding-bridge'] = {
       command: 'uvx',
@@ -445,7 +435,7 @@ function installCodingBridgeAllow(ctx) {
   if (added.length === 0) { log(`coding-bridge + kimi allowlist: already present; no change`); return; }
   if (ctx.dryRun) { log(`[dry-run] would add ${added.join(', ')} to ${p.SETTINGS_JSON} permissions.allow`); return; }
 
-  backupOnce(p.SETTINGS_JSON);
+  const sBak = backupOnce(p.SETTINGS_JSON); if (sBak) log(`backup: ${sBak}`);
   allow.push(...added);
   perms.allow = allow;
   d.permissions = perms;
@@ -564,7 +554,7 @@ function installStatusline(ctx) {
   log(`merging statusLine into ${target}`);
   if (ctx.dryRun) { log(`[dry-run] would merge: ${readFileSync(base, 'utf8').trim()}`); return; }
   mkdirSync(dirname(target), { recursive: true });
-  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) backupOnce(target);
+  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) { const stBak = backupOnce(target); if (stBak) log(`backup: ${stBak}`); }
   let tgt = {};
   try { tgt = JSON.parse(readFileSync(target, 'utf8')); }
   catch (e) { fatal(`invalid JSON in ${target}: ${e.message}`); }

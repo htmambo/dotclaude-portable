@@ -21,11 +21,12 @@
 //   ~/.claude/settings.json.permissions.allow — 同步 review tools allow
 'use strict';
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, statSync, copyFileSync, lstatSync, chmodSync } from 'node:fs';
-import { dirname, join, basename } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, statSync, chmodSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { backupOnce } from './lib/backup.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..');
@@ -78,18 +79,7 @@ function readText(file) {
   if (!existsSync(file)) return '';
   return readFileSync(file, 'utf8');
 }
-function backupOnce(file) {
-  if (!existsSync(file)) return null;
-  try { if (lstatSync(file).isSymbolicLink()) return null; } catch {}
-  const dir = dirname(file);
-  const base = basename(file);
-  const existing = readdirSync(dir).filter(f => f.startsWith(base + '.bak.'));
-  if (existing.length > 0) return null;
-  const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
-  const bak = `${file}.bak.${ts}`;
-  copyFileSync(file, bak);
-  return bak;
-}
+// backupOnce 已抽到 ./lib/backup.mjs（参见 import）
 
 // ─── .env 读写（KEY=VAL 形式，幂等覆盖） ─────────────
 function parseEnv(text) {
