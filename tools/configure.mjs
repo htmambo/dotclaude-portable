@@ -213,6 +213,11 @@ function _startKpCollector() {
   });
   // 退出时关闭 raw mode
   process.on('exit', () => { if (stdin.isRaw) stdin.setRawMode(false); });
+  // SIGINT 独立 handler：恢复 raw mode + 退出；once 避免与其他 handler 冲突
+  process.once('SIGINT', () => {
+    if (stdin.isRaw) stdin.setRawMode(false);
+    process.exit(130);
+  });
 }
 function _readKeypress() {
   if (!IS_TTY) return _nextLine();
