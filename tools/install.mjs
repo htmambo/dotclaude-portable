@@ -332,6 +332,11 @@ fi
   }
   log(`installing sync-docs pre-commit hook → ${hook}`);
   if (ctx.dryRun) return;
+  // 已存在 hook：无 ctx.force 则 skip + warn，避免静默覆盖用户自定义 hook
+  if (existsSync(hook) && !ctx.force) {
+    warn(`pre-commit hook already exists at ${hook}; skipping (use --force to overwrite)`);
+    return;
+  }
   mkdirSync(dirname(hook), { recursive: true });
   writeFileSync(hook, script);
   chmodSync(hook, 0o755);
@@ -348,6 +353,11 @@ python3 "\${REPO_ROOT}/tools/scan-secrets.py" "\${REPO_ROOT}" || { echo '[pre-pu
 `;
   log(`installing pre-push hook → ${hook}`);
   if (ctx.dryRun) return;
+  // 已存在 hook：无 ctx.force 则 skip + warn
+  if (existsSync(hook) && !ctx.force) {
+    warn(`pre-push hook already exists at ${hook}; skipping (use --force to overwrite)`);
+    return;
+  }
   mkdirSync(dirname(hook), { recursive: true });
   writeFileSync(hook, script);
   chmodSync(hook, 0o755);
