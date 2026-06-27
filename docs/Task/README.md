@@ -3,6 +3,7 @@
 ## 活跃任务 (Active)
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [主供应商预设三 commit 外部审核落地 (userinfo 凭据泄漏 + ANSI 注入修复)](Archive/2026-06/PRESET_REVIEW_HARDEN_PLAN.md) - 完成于 2026-06-27
 - ✅ [README 写入「主供应商预设」使用说明](Archive/2026-06/README_PRESET_USAGE_PLAN.md) - 完成于 2026-06-27
 - ✅ [预设 json 增加 title/description 厂商描述](Archive/2026-06/PRESET_META_TITLE_DESC_PLAN.md) - 完成于 2026-06-27
 - ✅ [主供应商预设「当前在用」识别修复](Archive/2026-06/PRESET_ACTIVE_DETECT_PLAN.md) - 完成于 2026-06-27

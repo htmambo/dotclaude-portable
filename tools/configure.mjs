@@ -49,6 +49,13 @@ const c = NO_COLOR ? new Proxy({}, { get: () => (s) => s }) : {
   gray: (s) => `\x1b[90m${s}\x1b[0m`,
 };
 
+// 剥离字符串中的 ANSI CSI/OSC 转义序列，防止 preset.description 等
+// 用户可控字段被注入 \x1b[2J（清屏）/\x1b]0;...\x07（设标题）等终端控制指令。
+// 仅处理 CSI（\x1b[）与 OSC（\x1b]）；非完备的 sanitizer，但覆盖 preset 实际场景。
+function stripAnsi(s) {
+  return String(s).replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '');
+}
+
 function out(s) { process.stdout.write(s + '\n'); }
 function info(s) { out(c.cyan(`▸ ${s}`)); }
 function ok(s) { out(c.green(`  ✓ ${s}`)); }
@@ -364,7 +371,8 @@ async function chooseVertical(question, options, { default: defIdx = 0 } = {}) {
     options.forEach((o, i) => {
       const marker = i === defIdx ? c.cyan('▸') : ' ';
       const activeMid = o.active === true ? `${c.green('当前在用')} — ` : '';
-      const desc = (o.description || activeMid) ? c.dim(` — ${activeMid}${o.description || ''}`) : '';
+      const safeDesc = o.description ? stripAnsi(o.description) : '';
+      const desc = (safeDesc || activeMid) ? c.dim(` — ${activeMid}${safeDesc}`) : '';
       out(`  ${marker} ${c.bold(`${i + 1}`)}) ${o.label}${desc}`);
     });
     out(`  ${c.gray('b) 返回上一级   q) 退出')}`);
@@ -638,7 +646,9 @@ function _scanPresets() {
     const env = it.json.env || {};
     const url = env.ANTHROPIC_BASE_URL || '（无 base_url）';
     const model = env.ANTHROPIC_MODEL || env.ANTHROPIC_DEFAULT_OPUS_MODEL || '';
-    const shortUrl = url.replace(/^https?:\/\//, '').split('/')[0];
+    // 用 URL 解析剥离 userinfo（user:pass@host），避免 user:pass 泄到终端
+    let shortUrl = url;
+    try { shortUrl = new URL(url).hostname; } catch { /* 保留原串，split('/')[0] 兜底 */ }
     // active：preset.env 是 settings.env 的 (key,value) 子集 → 该预设已完整应用
     // 仅布尔比对结果；token 等 secret 不进入 description，绝不回显明文
     const active = Object.keys(env).length > 0
@@ -905,7 +915,7 @@ function _renderSubRow(items, activeIdx, focusHere) {
     const isActive = i === activeIdx;
     // 状态颜色：isSet=true → 绿；未设 → 黄；不传 isSet → 默认 dim
     const setColor = it.isSet === true ? c.green : (it.isSet === false ? c.yellow : c.dim);
-    const descText = it.description ? it.description : '';
+    const descText = it.description ? stripAnsi(it.description) : '';
     // 预设面板专属：active=true → 该预设 env 与 settings.json 完全匹配（当前在用）
     // 作为中段插入：label — 当前在用 — tail；非 active 时整段省略（activeMid 为空串）
     const activeMid = it.active === true ? `${c.green('当前在用')} — ` : '';
