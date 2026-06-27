@@ -55,14 +55,15 @@ function makePaths(ctx) {
 // backupOnce 已抽到 ./lib/backup.mjs（参见 import）
 // 行为不变：仅首次备份；symlink 跳过；命名 `<file>.bak.YYYYMMDDHHMMSS`
 
-function atomicWriteFile(file, content) {
+function atomicWriteFile(file, content, { mode = 0o644 } = {}) {
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, content);
+  writeFileSync(tmp, content, { mode });
   renameSync(tmp, file);
+  try { chmodSync(file, mode); } catch {}
 }
 
-function atomicWriteJSON(file, data) {
-  atomicWriteFile(file, JSON.stringify(data, null, 2) + '\n');
+function atomicWriteJSON(file, data, opts) {
+  atomicWriteFile(file, JSON.stringify(data, null, 2) + '\n', opts);
 }
 
 // ─── ${VAR} 占位符渲染 ─────────────────────────────────
@@ -129,11 +130,17 @@ function installLinkOrCopy(src, dst, ctx) {
   if (ctx.mode === 'symlink') {
     symlinkSync(src, dst);
     log(`link: ${relative(ctx.home, dst)} → ${relative(ctx.repo, src)}`);
-  } else {
-    copyFileSync(src, dst);
-    log(`copy: ${relative(ctx.home, dst)}`);
+    return;
   }
-  chmodSync(dst, 0o755);
+  copyFileSync(src, dst);
+  log(`copy: ${relative(ctx.home, dst)}`);
+  // 仅当源文件本身有 x 位才设 0o755；避免给 JSON / md 等配置文件加不必要的执行位
+  try {
+    const srcStat = statSync(src);
+    if (srcStat.mode & 0o111) chmodSync(dst, 0o755);
+  } catch (e) {
+    warn(`chmod skipped for ${dst}: ${e.message}`);
+  }
 }
 
 // ─── HOOK_FILES 发现（相对路径）────────────────────────
@@ -185,7 +192,7 @@ function renderInstall(src, dst, kind, ctx) {
     log(`render+install: ${homeRel}`);
     return;
   }
-  atomicWriteFile(dst, out);
+  atomicWriteFile(dst, out, { mode: 0o600 });
   log(`render+install: ${homeRel}`);
 }
 
@@ -355,7 +362,7 @@ function installMemoryMcp(ctx) {
   mem.env.MEMORY_FILE_PATH = memFile;
   servers.memory = mem;
   d.mcpServers = servers;
-  atomicWriteJSON(mcpConfig, d);
+  atomicWriteJSON(mcpConfig, d, { mode: 0o600 });
   log(`memory MCP configured: MEMORY_FILE_PATH=${memFile}`);
   warn(`restart Claude Code to activate new config`);
 }
@@ -411,7 +418,7 @@ function installCodingBridgeJson(ctx) {
     };
   }
   d.mcpServers = servers;
-  atomicWriteJSON(p.CLAUDE_JSON, d);
+  atomicWriteJSON(p.CLAUDE_JSON, d, { mode: 0o600 });
   const added = [!hasCb && 'coding-bridge', !hasKimi && 'kimi'].filter(Boolean);
   log(`added ${added.join(' + ')} to ${p.CLAUDE_JSON} mcpServers`);
 }
@@ -442,7 +449,7 @@ function installCodingBridgeAllow(ctx) {
   allow.push(...added);
   perms.allow = allow;
   d.permissions = perms;
-  atomicWriteJSON(p.SETTINGS_JSON, d);
+  atomicWriteJSON(p.SETTINGS_JSON, d, { mode: 0o600 });
   log(`added ${added.length} entry: ${added.join(', ')}`);
 }
 
@@ -563,7 +570,7 @@ function installStatusline(ctx) {
   catch (e) { fatal(`invalid JSON in ${target}: ${e.message}`); }
   const baseCfg = JSON.parse(readFileSync(base, 'utf8'));
   tgt.statusLine = { ...(tgt.statusLine ?? {}), ...(baseCfg.statusLine ?? {}) };
-  atomicWriteJSON(target, tgt);
+  atomicWriteJSON(target, tgt, { mode: 0o600 });
   log(`statusLine merged`);
 }
 
