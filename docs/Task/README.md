@@ -3,6 +3,7 @@
 ## 活跃任务 (Active)
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [tools/*.mjs 外部审核修复（17 项 finding + kimi 兜底发现 showCurrentEnv）](Archive/2026-06/TOOLS_MJS_REVIEW_FIX_PLAN.md) - 完成于 2026-06-27
 - ✅ [configure.mjs 外部审核落地 (TUI 状态机硬化 + KEY 文件权限)](Archive/2026-06/CONFIGURE_HARDEN_PLAN.md) - 完成于 2026-06-27
 - ✅ [hook 防护与预警鲁棒化](Archive/2026-06/HOOK_SIZE_WARN_PLAN.md) - 完成于 2026-06-23
 - ✅ [Node.js 核心迁移 (1.0.7 → 2.0.0)](Archive/2026-06/NODEJS_MIGRATION_PLAN.md) - 完成于 2026-06-23
