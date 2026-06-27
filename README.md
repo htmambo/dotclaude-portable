@@ -58,6 +58,67 @@ cd dotclaude-portable
 
 **不在范围内**(pull-and-sync 失败/异常时)按下面"已有机器 git pull 后"段手动补。
 
+## Claude Code 主供应商预设
+
+切换 Claude Code **本身**的 AI 模型后端（接 minimax / 讯飞 / 火山 / 自建中转等兼容服务），运行 `./tools/configure.mjs` → 菜单 2。详细操作见 [docs/Usage/CONFIGURE.md](docs/Usage/CONFIGURE.md)。
+
+### 预设从哪来
+
+向导**动态扫描**两个目录的 JSON，过滤系统文件（`settings.json` / `.mcp.json` / `providers.json` / `settings.local.json` / `default.json` 等）后列出：
+
+- `~/.claude/*.json` — 用户自建预设（优先）
+- `global/json/*.base.json` — 仓库自带预设（同名时用户级覆盖）
+
+任何含 `env` 段的 JSON 放进 `~/.claude/` 即成为可选预设，命名随意（`myproxy.json` 等）。
+
+### 厂商元数据 `title` / `description`（可选）
+
+在预设 JSON 顶层加 `title` / `description` 描述厂商，向导会优先展示：
+
+```json
+{
+  "title": "火山引擎（ARK）",
+  "description": "字节跳动火山方舟，glm-5.2 直连",
+  "env": { "ANTHROPIC_BASE_URL": "...", "ANTHROPIC_AUTH_TOKEN": "..." },
+  "permissions": { "...": "..." }
+}
+```
+
+- `title` / `description` 是**惰性顶层 key**（同 `permissions` / `hooks`），合并时**只取 `env` + `model`**，从不并入 `settings.json`，不影响 Claude Code 运行。
+- `title` 缺失时回退显示文件名；`description` 缺失时回退显示 `base_url`。
+
+### 列表显示格式（三段）
+
+```
+自建中转·火山 — 当前在用 — 自建 ai.imzhp.top 代理，火山后端
+讯飞星火 — 科大讯飞星火 coding api，astron-code
+myproxy.json — test.example.com
+```
+
+格式：`[title|文件名] — [当前在用 — ]description|base_url`。中段「当前在用」仅 active 项显示。
+
+### 「当前在用」如何识别
+
+向导把每个预设的 `env` 与 `~/.claude/settings.json` 的 `env` 做 **(key, value) 子集匹配**——预设的每个 env 键值都等于 settings 当前值时，判定为「当前在用」。这比只比 `ANTHROPIC_BASE_URL` 更准：多个预设共用同一代理 URL（仅 token 不同）时仍能唯一识别。
+
+> token 等 secret 仅内部比对，绝不回显明文。
+
+### 操作与注意事项
+
+1. 选中预设 = 把其 `env` 段**深合并**进 `~/.claude/settings.json`（保留 `statusLine` / `enabledPlugins` / `permissions` 等其它字段；`model` 字段若有则一并覆盖）。
+2. 向导**不**让你输新 token —— 预设的 token 是你**预先配过**的 secret。token 过期 / 失效请**手动**编辑对应 JSON。
+3. 切完需要**重启 Claude Code** 让 env 生效。
+4. `ANTHROPIC_AUTH_TOKEN` 等 secret 字段原样保留，不会因合并被清空。
+
+### 与「外部 Review 供应商」的区别
+
+| 菜单 | 作用对象 | 决定什么 |
+|---|---|---|
+| 主供应商预设 | Claude Code **本身**的 AI 模型 | 跟 Claude Code 聊天时它用哪家模型回答 |
+| 外部 Review 供应商 | coding-bridge MCP | Claude Code 改代码后**外部审核**走哪家 |
+
+两者完全独立 —— 可以用火山跑 Claude Code，同时用 coding-bridge 走讯飞做外部审核。
+
 ## 跨项目用 nudge-review 强制外部审核
 
 `hooks/nudge-review.sh` 是 **commit-msg hook**:提交代码改动(非 markdown)时,commit message 必须含审核标记:

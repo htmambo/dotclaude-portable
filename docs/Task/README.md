@@ -1,9 +1,9 @@
 # 任务索引
 
 ## 活跃任务 (Active)
-- 🔄 [预设显示三段格式精简](Active/PRESET_DISPLAY_TRIPLE_PLAN.md) - Started 2026-06-27
 ## 已完成任务 (Archive)
 ### 2026-06
+- ✅ [README 写入「主供应商预设」使用说明](Archive/2026-06/README_PRESET_USAGE_PLAN.md) - 完成于 2026-06-27
 - ✅ [预设 json 增加 title/description 厂商描述](Archive/2026-06/PRESET_META_TITLE_DESC_PLAN.md) - 完成于 2026-06-27
 - ✅ [主供应商预设「当前在用」识别修复](Archive/2026-06/PRESET_ACTIVE_DETECT_PLAN.md) - 完成于 2026-06-27
 - ✅ [代码审查修复 2026-06-27](Archive/2026-06/CODE_REVIEW_FIX_2026_06_27_PLAN.md) - 完成于 2026-06-27

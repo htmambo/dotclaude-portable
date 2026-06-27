@@ -10,7 +10,7 @@
 
 菜单：
 1. **外部 Review 供应商**（coding-bridge，xfyun / volcengine 后端 + API key）
-2. **Claude Code 主供应商预设**（minimax / anyrouter / selfminimax / xunfei / default）
+2. **Claude Code 主供应商预设**（动态扫描 `~/.claude/*.json`）
 3. **Statusline / HUD**（ccstatusline-zh / omc-hud）
 4. **辅助子模块状态**（只读：memory MCP / pre-push / pre-sync-docs）
 5. **查看当前 .env**
@@ -19,20 +19,50 @@
 
 ## Claude Code 主供应商预设（菜单 2）做什么用？
 
-切换 Claude Code **本身**的 AI 模型后端。Claude Code 默认接 Anthropic 官方 API，但你也可以让它接**别的兼容服务**（自部署 / 中转 / 第三方代理）——只需把 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` 改一下即可。这 5 个预设对应 5 套预先配好的 env 段：
+切换 Claude Code **本身**的 AI 模型后端。Claude Code 默认接 Anthropic 官方 API，但你也可以让它接**别的兼容服务**（自部署 / 中转 / 第三方代理）——只需把 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` 改一下即可。
 
-| 预设 | 用途 | 配置源 |
-|---|---|---|
-| `minimax` | 某中转服务 | `~/.claude/minimax.json` |
-| `anyrouter` | 另一中转服务 | `~/.claude/anyrouter.json` |
-| `selfminimax` | 自部署版本 | `~/.claude/selfminimax.json` |
-| `xunfei` | 讯飞的中转 | `~/.claude/xunfei.json` |
-| `default` | 占位 / 恢复默认 | `~/.claude/default.json` |
+### 预设从哪来
 
-选某个预设 = 把对应 JSON 文件的 `env` 段合并到 `~/.claude/settings.json`。**注意**：
+向导**动态扫描**两个目录的 JSON，过滤系统文件（`settings.json` / `.mcp.json` / `providers.json` / `settings.local.json` / `default.json` 等）后列出：
+
+- `~/.claude/*.json` — 用户自建预设（优先）
+- `global/json/*.base.json` — 仓库自带预设（同名时用户级覆盖）
+
+任何含 `env` 段的 JSON 放进 `~/.claude/` 即成为可选预设，命名随意（`myproxy.json` 等）。
+
+### 厂商元数据 `title` / `description`（可选）
+
+在预设 JSON 顶层加 `title` / `description` 描述厂商，向导会优先展示。它们是**惰性顶层 key**（同 `permissions` / `hooks`），合并时**只取 `env` + `model`**，从不并入 `settings.json`，不影响 Claude Code 运行。`title` 缺失回退显示文件名；`description` 缺失回退显示 `base_url`。
+
+```json
+{
+  "title": "火山引擎（ARK）",
+  "description": "字节跳动火山方舟，glm-5.2 直连",
+  "env": { "ANTHROPIC_BASE_URL": "...", "ANTHROPIC_AUTH_TOKEN": "..." }
+}
+```
+
+### 列表显示格式（三段）
+
+```
+自建中转·火山 — 当前在用 — 自建 ai.imzhp.top 代理，火山后端
+讯飞星火 — 科大讯飞星火 coding api，astron-code
+myproxy.json — test.example.com
+```
+
+格式：`[title|文件名] — [当前在用 — ]description|base_url`。中段「当前在用」仅 active 项显示。
+
+### 「当前在用」如何识别
+
+向导把每个预设的 `env` 与 `~/.claude/settings.json` 的 `env` 做 **(key, value) 子集匹配**——预设的每个 env 键值都等于 settings 当前值时判定为「当前在用」。比只比 `ANTHROPIC_BASE_URL` 更准：多个预设共用同一代理 URL（仅 token 不同）时仍能唯一识别。token 等 secret 仅内部比对，绝不回显明文。
+
+### 操作与注意事项
+
+选某个预设 = 把对应 JSON 文件的 `env` 段**深合并**到 `~/.claude/settings.json`（保留 `statusLine` / `enabledPlugins` / `permissions` 等其它字段；`model` 字段若有则一并覆盖）。**注意**：
 - 这里**不**让你输新 token——预设的 token 是**你预先配过**的 secret
 - token 过期 / 失效请**手动**编辑对应 JSON 文件
 - 切完需要**重启 Claude Code** 让 env 生效
+- `ANTHROPIC_AUTH_TOKEN` 等 secret 字段原样保留，不会因合并被清空
 
 跟「外部 Review 供应商」的区别：
 
