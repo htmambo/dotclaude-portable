@@ -631,13 +631,19 @@ function _scanPresets() {
     }
   }
   // 按 mtime 倒序
+  const curSettings = readJSON(SETTINGS_JSON) || {};
+  const curEnv = curSettings.env || {};
   return [...seen.values()].sort((a, b) => b.mtime - a.mtime).map(it => {
     const env = it.json.env || {};
     const url = env.ANTHROPIC_BASE_URL || '（无 base_url）';
     const model = env.ANTHROPIC_MODEL || env.ANTHROPIC_DEFAULT_OPUS_MODEL || '';
     const shortUrl = url.replace(/^https?:\/\//, '').split('/')[0];
+    // active：preset.env 是 settings.env 的 (key,value) 子集 → 该预设已完整应用
+    // 仅布尔比对结果；token 等 secret 不进入 description，绝不回显明文
+    const active = Object.keys(env).length > 0
+      && Object.keys(env).every(k => Object.prototype.hasOwnProperty.call(curEnv, k) && curEnv[k] === env[k]);
     const desc = `${shortUrl}${model ? ' · ' + model : ''}${it.source === 'repo' ? ' · 仓库' : ''}`;
-    return { id: it.file.replace(/(\.base)?\.json$/, ''), label: it.file, file: it.file, path: it.path, description: desc };
+    return { id: it.file.replace(/(\.base)?\.json$/, ''), label: it.file, file: it.file, path: it.path, description: desc, active };
   });
 }
 async function configureMainPreset() {
@@ -655,6 +661,12 @@ async function configureMainPreset() {
     return 'continue';
   }
   info(`  检测到 ${presets.length} 个预设：${presets.map(p => p.id).join(', ')}`);
+  const activePreset = presets.find(p => p.active);
+  if (activePreset) {
+    ok(`当前在用：${c.bold(activePreset.file)}（env 与 settings.json 完全匹配）`);
+  } else {
+    warn(`当前 settings.json 的 env 未完整匹配任何预设（可能为手动修改或混合来源）`);
+  }
   const sel = await choose(`选择预设（写入 ~/.claude/settings.json 的 env，共 ${presets.length} 项）`, presets);
   if (sel.quit) return 'quit';
   if (sel.back) return 'back';
@@ -886,12 +898,14 @@ function _renderSubRow(items, activeIdx, focusHere) {
     // 状态颜色：isSet=true → 绿；未设 → 黄；不传 isSet → 默认 dim
     const setColor = it.isSet === true ? c.green : (it.isSet === false ? c.yellow : c.dim);
     const descText = it.description ? it.description : '';
+    // 预设面板专属：active=true → 该预设 env 与 settings.json 完全匹配（当前在用）
+    const activeTag = it.active === true ? c.green(' [当前在用]') : '';
     if (isActive && focusHere) {
-      return `  ${c.cyan('▸')} \x1b[7m\x1b[1m ${it.label} \x1b[0m — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
+      return `  ${c.cyan('▸')} \x1b[7m\x1b[1m ${it.label} \x1b[0m${activeTag} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
     } else if (isActive) {
-      return `  ${c.cyan('▸')} ${c.bold(it.label)} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
+      return `  ${c.cyan('▸')} ${c.bold(it.label)}${activeTag} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
     }
-    return `    ${it.label} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
+    return `    ${it.label}${activeTag} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
   }).join('\n');
 }
 
@@ -1207,12 +1221,8 @@ function _panelPreset() {
     breadcrumb: '主菜单 > Claude Code 主供应商预设',
     title: '选择预设（合并到 ~/.claude/settings.json）',
     options: presets,
-    // 高亮当前 active 预设（base_url 匹配）
-    defaultIdx: Math.max(0, presets.findIndex(p => {
-      const fp = join(CLAUDE_DIR, p.file);
-      const env = readJSON(fp)?.env;
-      return env && env.ANTHROPIC_BASE_URL && env.ANTHROPIC_BASE_URL === cur?.env?.ANTHROPIC_BASE_URL;
-    })),
+    // 高亮当前 active 预设（preset.env 是 settings.env 的 (key,value) 子集）
+    defaultIdx: Math.max(0, presets.findIndex(p => p.active)),
   };
 }
 function _panelApply() {
