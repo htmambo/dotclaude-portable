@@ -363,7 +363,8 @@ async function chooseVertical(question, options, { default: defIdx = 0 } = {}) {
     out(`  ${c.bold(question)}`);
     options.forEach((o, i) => {
       const marker = i === defIdx ? c.cyan('▸') : ' ';
-      const desc = o.description ? c.dim(` — ${o.description}`) : '';
+      const activeMid = o.active === true ? `${c.green('当前在用')} — ` : '';
+      const desc = (o.description || activeMid) ? c.dim(` — ${activeMid}${o.description || ''}`) : '';
       out(`  ${marker} ${c.bold(`${i + 1}`)}) ${o.label}${desc}`);
     });
     out(`  ${c.gray('b) 返回上一级   q) 退出')}`);
@@ -646,8 +647,10 @@ function _scanPresets() {
     const metaTitle = typeof it.json.title === 'string' && it.json.title.trim() ? it.json.title.trim() : '';
     const metaDesc = typeof it.json.description === 'string' && it.json.description.trim() ? it.json.description.trim() : '';
     const urlModel = `${shortUrl}${model ? ' · ' + model : ''}${it.source === 'repo' ? ' · 仓库' : ''}`;
-    const desc = metaTitle ? `${metaTitle}（${urlModel}）${metaDesc ? ' · ' + metaDesc : ''}` : urlModel;
-    return { id: it.file.replace(/(\.base)?\.json$/, ''), label: it.file, file: it.file, path: it.path, description: desc, active, title: metaTitle, metaDesc };
+    // 三段格式：label=title||file；tail=description||url+model
+    const label = metaTitle || it.file;
+    const desc = metaDesc || urlModel;
+    return { id: it.file.replace(/(\.base)?\.json$/, ''), label, file: it.file, path: it.path, description: desc, active, title: metaTitle, metaDesc };
   });
 }
 async function configureMainPreset() {
@@ -667,7 +670,7 @@ async function configureMainPreset() {
   info(`  检测到 ${presets.length} 个预设：${presets.map(p => p.id).join(', ')}`);
   const activePreset = presets.find(p => p.active);
   if (activePreset) {
-    const tag = activePreset.title ? `${c.bold(activePreset.title)}（${activePreset.file}）` : c.bold(activePreset.file);
+    const tag = c.bold(activePreset.title || activePreset.file);
     ok(`当前在用：${tag}（env 与 settings.json 完全匹配）`);
   } else {
     warn(`当前 settings.json 的 env 未完整匹配任何预设（可能为手动修改或混合来源）`);
@@ -904,13 +907,14 @@ function _renderSubRow(items, activeIdx, focusHere) {
     const setColor = it.isSet === true ? c.green : (it.isSet === false ? c.yellow : c.dim);
     const descText = it.description ? it.description : '';
     // 预设面板专属：active=true → 该预设 env 与 settings.json 完全匹配（当前在用）
-    const activeTag = it.active === true ? c.green(' [当前在用]') : '';
+    // 作为中段插入：label — 当前在用 — tail；非 active 时整段省略（activeMid 为空串）
+    const activeMid = it.active === true ? `${c.green('当前在用')} — ` : '';
     if (isActive && focusHere) {
-      return `  ${c.cyan('▸')} \x1b[7m\x1b[1m ${it.label} \x1b[0m${activeTag} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
+      return `  ${c.cyan('▸')} \x1b[7m\x1b[1m ${it.label} \x1b[0m — ${activeMid}${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
     } else if (isActive) {
-      return `  ${c.cyan('▸')} ${c.bold(it.label)}${activeTag} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
+      return `  ${c.cyan('▸')} ${c.bold(it.label)} — ${activeMid}${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
     }
-    return `    ${it.label}${activeTag} — ${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
+    return `    ${it.label} — ${activeMid}${setColor(descText.replace(/^[^=]+=\s*/, ''))}`;
   }).join('\n');
 }
 

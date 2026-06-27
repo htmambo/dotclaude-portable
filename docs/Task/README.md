@@ -1,6 +1,7 @@
 # 任务索引
 
 ## 活跃任务 (Active)
+- 🔄 [预设显示三段格式精简](Active/PRESET_DISPLAY_TRIPLE_PLAN.md) - Started 2026-06-27
 ## 已完成任务 (Archive)
 ### 2026-06
 - ✅ [预设 json 增加 title/description 厂商描述](Archive/2026-06/PRESET_META_TITLE_DESC_PLAN.md) - 完成于 2026-06-27
