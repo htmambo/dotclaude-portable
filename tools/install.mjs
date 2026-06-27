@@ -213,10 +213,10 @@ function backupExisting(ctx) {
     }
   }
   log(`backed up existing files to ${snap}`);
-  pruneBackups(p.BACKUP_ROOT);
+  pruneBackups(p.BACKUP_ROOT, ctx);
 }
 
-function pruneBackups(backupRoot) {
+function pruneBackups(backupRoot, ctx) {
   if (!existsSync(backupRoot)) return;
   const snaps = readdirSync(backupRoot)
     .filter(d => { try { return statSync(join(backupRoot, d)).isDirectory(); } catch { return false; } })
@@ -224,8 +224,11 @@ function pruneBackups(backupRoot) {
     .reverse();
   if (snaps.length > MAX_BACKUPS) {
     for (const d of snaps.slice(MAX_BACKUPS)) {
-      log(`pruning old backup: ${join(backupRoot, d)}`);
-      if (!ctx.dryRun) rmSync(join(backupRoot, d), { recursive: true });
+      if (ctx.dryRun) log(`[dry-run] would prune: ${join(backupRoot, d)}`);
+      else {
+        log(`pruning old backup: ${join(backupRoot, d)}`);
+        rmSync(join(backupRoot, d), { recursive: true });
+      }
     }
   }
 }
