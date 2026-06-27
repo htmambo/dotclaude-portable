@@ -46,7 +46,7 @@
       },
       {
         "id": "198b295f-06e6-4fb8-8d08-aa0d17f962e6",
-        "type": "worktree-branch"
+        "type": "git-branch"
       },
       {
         "id": "b859074c-9676-4187-8fe0-de0e7add3c44",
