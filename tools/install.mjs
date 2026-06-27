@@ -241,30 +241,52 @@ function pruneBackups(backupRoot, ctx) {
 }
 
 // ─── shell profile 注入 ────────────────────────────────
+// 注入用 begin/end 块标记，strip 时按块删除（更鲁棒，不依赖 export 行紧邻）。
+// 老版本用单行 `# dotclaude-portable` 标记；strip 时先按块匹配，找不到再 fallback 老标记。
+const BLOCK_START = '# >>> dotclaude-portable start >>>';
+const BLOCK_END = '# <<< dotclaude-portable end <<<';
+const LEGACY_MARKER = '# dotclaude-portable';
+
 function injectShellProfile(ctx) {
-  const marker = '# dotclaude-portable';
-  const line = 'export CLAUDE_HOME="$HOME/.claude"';
+  const block = `\n${BLOCK_START}\nexport CLAUDE_HOME="$HOME/.claude"\n${BLOCK_END}\n`;
   for (const f of [join(ctx.home, '.bashrc'), join(ctx.home, '.zshrc')]) {
     if (!existsSync(f)) continue;
     const txt = readFileSync(f, 'utf8');
-    if (txt.includes(marker)) { log(`shell profile tagged: ${f}`); continue; }
+    if (txt.includes(BLOCK_START) || txt.includes(LEGACY_MARKER)) {
+      log(`shell profile tagged: ${f}`); continue;
+    }
     log(`appending to ${f}`);
-    if (!ctx.dryRun) writeFileSync(f, `\n${marker}\n${line}\n`, { flag: 'a' });
+    if (!ctx.dryRun) writeFileSync(f, block, { flag: 'a' });
   }
 }
 
 function stripShellProfile(ctx) {
-  const marker = '# dotclaude-portable';
   for (const f of [join(ctx.home, '.bashrc'), join(ctx.home, '.zshrc')]) {
     if (!existsSync(f)) continue;
     let txt = readFileSync(f, 'utf8');
-    if (!txt.includes(marker)) continue;
+    const hasBlock = txt.includes(BLOCK_START) && txt.includes(BLOCK_END);
+    const hasOrphanStart = !hasBlock && txt.includes(BLOCK_START);
+    const hasLegacy = txt.includes(LEGACY_MARKER);
+    if (!hasBlock && !hasOrphanStart && !hasLegacy) continue;
     log(`stripping dotclaude-portable block from ${f}`);
-    if (!ctx.dryRun) {
-      // 删 marker 行 + 紧跟的非空行 + 紧跟的 export 行 + 尾部空行
-      txt = txt.replace(new RegExp(`\\n?${marker}\\n.*\\n?`, 's'), '\n');
-      writeFileSync(f, txt);
+    if (ctx.dryRun) continue;
+    // 1) 完整 begin/end 块（可能多个，循环清除）
+    while (txt.includes(BLOCK_START) && txt.includes(BLOCK_END)) {
+      const before = txt;
+      txt = txt.replace(new RegExp(`\\n?${BLOCK_START}[\\s\\S]*?${BLOCK_END}\\n?`), '\n');
+      if (txt === before) break;
     }
+    // 2) 孤立 BLOCK_START（无 END）：删 start 行 + 紧随的 export 行
+    if (txt.includes(BLOCK_START) && !txt.includes(BLOCK_END)) {
+      txt = txt.replace(new RegExp(`\\n?${BLOCK_START}\\n[^\\n]*\\n?`), '\n');
+    }
+    // 3) 老单行标记（紧跟一行 export），循环
+    while (txt.includes(LEGACY_MARKER)) {
+      const before = txt;
+      txt = txt.replace(new RegExp(`\\n?${LEGACY_MARKER}\\n[^\\n]*\\n?`), '\n');
+      if (txt === before) break;
+    }
+    writeFileSync(f, txt);
   }
 }
 
