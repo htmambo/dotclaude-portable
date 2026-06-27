@@ -81,6 +81,8 @@ function renderTemplate(text, env = process.env) {
 }
 
 // ─── 深合并（数组追加去重，对象递归）────────────────────
+// 注意：数组去重用 includes()，仅适用基本类型（string/number/boolean）；
+// 对象数组（如 hooks 配置）可能重复添加——调用方需自行保证。
 function deepMerge(target, source) {
   for (const [k, v] of Object.entries(source)) {
     if (Array.isArray(v)) {
@@ -175,7 +177,7 @@ const MAP = [
 
 function renderInstall(src, dst, kind, ctx) {
   const homeRel = relative(ctx.home, dst);
-  if (existsSync(dst) || (() => { try { return lstatSync(dst).isSymbolicLink(); } catch { return false; } })()) {
+  if (existsSync(dst)) {
     log(`skip render (exists): ${homeRel}`);
     return;
   }
@@ -205,7 +207,7 @@ function backupExisting(ctx) {
   let touched = false;
   for (const [, dstRel] of MAP) {
     const dst = join(p.TARGET_HOME, dstRel);
-    if (existsSync(dst) || (() => { try { return lstatSync(dst).isSymbolicLink(); } catch { return false; } })()) {
+    if (existsSync(dst)) {
       touched = true; break;
     }
   }
@@ -213,7 +215,7 @@ function backupExisting(ctx) {
   mkdirSync(snap, { recursive: true });
   for (const [, dstRel] of MAP) {
     const dst = join(p.TARGET_HOME, dstRel);
-    if (existsSync(dst) || (() => { try { return lstatSync(dst).isSymbolicLink(); } catch { return false; } })()) {
+    if (existsSync(dst)) {
       const relDst = relative(p.TARGET_HOME, dst);
       mkdirSync(dirname(join(snap, relDst)), { recursive: true });
       renameSync(dst, join(snap, relDst));
