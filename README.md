@@ -26,6 +26,10 @@ cd dotclaude-portable
 ./install.sh --check
 ./install.sh doctor       # secret 扫描
 
+# install 完成后若提示 "recommend: ./install.sh doctor"，通常是因为
+# ~/.claude.json 还未生成（首次安装无 Claude Code 引导）。先启动一次 Claude Code，
+# 再重跑 install + doctor 确认 fallback 链就位。
+
 # 5. 跨机器补全
 ./install.sh install-statusline   # 把 ccstatusline-zh 注入本机 settings.json
 ./install.sh install-memory-mcp   # 修复 MCP memory 持久化路径

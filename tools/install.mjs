@@ -586,6 +586,7 @@ function installCodingBridgeMcp(ctx) {
 
   if (ok) log(`coding-bridge + kimi fallback: ready (restart Claude Code to activate)`);
   else warn(`coding-bridge fallback chain not fully wired; see warnings above`);
+  return ok;
 }
 
 // ─── install-statusline ──────────────────────────────
@@ -756,9 +757,12 @@ function install(ctx) {
   installPreSyncDocsHook(ctx);
   installPrePush(ctx);
   installCodingBridgeJson(ctx);
-  installCodingBridgeMcp(ctx);
+  const cbReady = installCodingBridgeMcp(ctx);
   installCcstatusline(ctx);
   log(`done. managed: ${p.TARGET_HOME}`);
+  if (!cbReady && !ctx.dryRun) {
+    warn(`coding-bridge fallback chain not fully wired; recommend: ./install.sh doctor`);
+  }
 }
 
 // ─── arg 解析 ─────────────────────────────────────────
