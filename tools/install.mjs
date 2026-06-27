@@ -413,11 +413,13 @@ function installCodingBridgeJson(ctx) {
       command: 'uvx',
       args: ['--from', 'git+https://github.com/htmambo/coding-bridge-mcp.git', 'coding-bridge-mcp'],
       transport: 'stdio',
+      timeout: 600000, // 客户端层（ms）：Claude Code 等工具返回；须 ≤ 服务端层
       env: {
         PROVIDER: 'xfyun-coding',
         API_KEY: '${CODING_BRIDGE_API_KEY}',
         SPARK_API_KEY: '${SPARK_API_KEY}',
         ARK_API_KEY: '${ARK_API_KEY}',
+        MCP_TIMEOUT_SECONDS: '600', // 服务端层（s）：coding-bridge→上游 LLM httpx；默认 300 高负载易被打断
       },
     };
   }
