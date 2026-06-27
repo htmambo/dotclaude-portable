@@ -101,13 +101,23 @@ function serializeEnv(map) {
 let _setEnvCounter = 0; // 防 setEnvKey 在同毫秒内连续调用冲突
 function setEnvKey(map, key, value) {
   const line = `${key}=${value}`;
+  // 1) 同 key 已有条目（值或哨兵）→ 就地更新，避免 map 增长
   for (const [k, v] of map.entries()) {
-    if (typeof v === 'object' && v.line) {
-      if (/^\s*[A-Z_][A-Z0-9_]*\s*=/.test(v.line) && v.line.match(/^\s*([A-Z_][A-Z0-9_]*)/)?.[1] === key) {
-        map.set(k, { value, line }); return true;
-      }
+    if (typeof v === 'object' && v.line && /^\s*[A-Z_][A-Z0-9_]*\s*=/.test(v.line)
+        && v.line.match(/^\s*([A-Z_][A-Z0-9_]*)/)?.[1] === key) {
+      map.set(k, { value, line }); return true;
     }
   }
+  // 2) 收集同 envKey 的旧哨兵 __new_* 条目，循环结束后批量删除（避免 Map iteration + delete 混用）
+  const toDelete = [];
+  for (const [k, v] of map.entries()) {
+    if (typeof v === 'object' && v.line && /^\s*[A-Z_][A-Z0-9_]*\s*=/.test(v.line)) {
+      const m = v.line.match(/^\s*([A-Z_][A-Z0-9_]*)/)?.[1];
+      if (m === key && k.startsWith('__new_')) toDelete.push(k);
+    }
+  }
+  for (const k of toDelete) map.delete(k);
+  // 3) 插入新条目
   map.set(`__new_${Date.now()}_${++_setEnvCounter}_${key}`, { value, line });
   return false;
 }
