@@ -80,25 +80,6 @@ function renderTemplate(text, env = process.env) {
   });
 }
 
-// ─── 深合并（数组追加去重，对象递归）────────────────────
-// 注意：数组去重用 includes()，仅适用基本类型（string/number/boolean）；
-// 对象数组（如 hooks 配置）可能重复添加——调用方需自行保证。
-function deepMerge(target, source) {
-  for (const [k, v] of Object.entries(source)) {
-    if (Array.isArray(v)) {
-      if (!Array.isArray(target[k])) target[k] = [];
-      for (const item of v) {
-        if (!target[k].includes(item)) target[k].push(item);
-      }
-    } else if (v && typeof v === 'object') {
-      target[k] = deepMerge(target[k] && typeof target[k] === 'object' && !Array.isArray(target[k]) ? target[k] : {}, v);
-    } else if (target[k] === undefined) {
-      target[k] = v;
-    }
-  }
-  return target;
-}
-
 // ─── symlink / copy 安装 ───────────────────────────────
 function installLinkOrCopy(src, dst, ctx) {
   if (!existsSync(src)) fatal(`missing source: ${src}`);
@@ -329,16 +310,14 @@ if [[ "\$STAGED" == *"hooks/"* ]] \\
   node "\${REPO_ROOT}/scripts/sync-docs.mjs" --check
 fi
 `;
-  if (existsSync(hook)) {
-    log(`pre-commit hook already exists at ${hook}; overwrite with current template`);
-  }
-  log(`installing sync-docs pre-commit hook → ${hook}`);
-  if (ctx.dryRun) return;
+  if (ctx.dryRun) { log(`[dry-run] would install sync-docs pre-commit hook at ${hook}`); return; }
   // 已存在 hook：无 ctx.force 则 skip + warn，避免静默覆盖用户自定义 hook
   if (existsSync(hook) && !ctx.force) {
     warn(`pre-commit hook already exists at ${hook}; skipping (use --force to overwrite)`);
     return;
   }
+  if (existsSync(hook)) log(`overwriting existing pre-commit hook at ${hook} (--force)`);
+  log(`installing sync-docs pre-commit hook → ${hook}`);
   mkdirSync(dirname(hook), { recursive: true });
   writeFileSync(hook, script);
   chmodSync(hook, 0o755);
@@ -353,13 +332,14 @@ set -e
 REPO_ROOT="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
 python3 "\${REPO_ROOT}/tools/scan-secrets.py" "\${REPO_ROOT}" || { echo '[pre-push] secret detected; abort' >&2; exit 1; }
 `;
-  log(`installing pre-push hook → ${hook}`);
-  if (ctx.dryRun) return;
+  if (ctx.dryRun) { log(`[dry-run] would install pre-push hook at ${hook}`); return; }
   // 已存在 hook：无 ctx.force 则 skip + warn
   if (existsSync(hook) && !ctx.force) {
     warn(`pre-push hook already exists at ${hook}; skipping (use --force to overwrite)`);
     return;
   }
+  if (existsSync(hook)) log(`overwriting existing pre-push hook at ${hook} (--force)`);
+  log(`installing pre-push hook → ${hook}`);
   mkdirSync(dirname(hook), { recursive: true });
   writeFileSync(hook, script);
   chmodSync(hook, 0o755);

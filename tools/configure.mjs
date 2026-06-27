@@ -519,42 +519,55 @@ async function configureReviewProvider() {
   return 'continue';
 }
 
-// 把 coding-bridge / kimi 同步到 ~/.claude.json.mcpServers（不破坏其他 server）
+// 把 coding-bridge 同步到 ~/.claude.json.mcpServers（写字面值，不破坏其他 server）
+// 设计：与 _applyKeysToClaudeJson 对齐——MCP env 段是字面值，不经 shell 展开，
+// 故必须写已解析的 KEY；占位符 ${...} 会导致鉴权失败。
+// kimi MCP 段由 install.mjs:installCodingBridgeJson 写入，configure 侧不重复。
 async function syncClaudeJsonCodingBridge(cbProvider) {
+  // ST-7 硬化：读 .env 字面值；缺 key 时不写空值/占位符
+  const provider = readEnvKey('CODING_BRIDGE_PROVIDER') || cbProvider || 'xfyun-coding';
+  const spark = readEnvKey('SPARK_API_KEY') || '';
+  const ark = readEnvKey('ARK_API_KEY') || '';
+  const generic = readEnvKey('CODING_BRIDGE_API_KEY') || '';
+  let activeKey;
+  if (provider === 'xfyun-coding') activeKey = spark || generic;
+  else if (provider === 'volcengine-coding') activeKey = ark || generic;
+  else activeKey = generic;
+  // provider 指定但专属 key 缺失 → 静默回退到 generic 会用错 key，warn 提示
+  if (activeKey && ((provider === 'xfyun-coding' && !spark) || (provider === 'volcengine-coding' && !ark))) {
+    warn(`未设置 ${provider === 'xfyun-coding' ? 'SPARK_API_KEY' : 'ARK_API_KEY'}，回退使用 CODING_BRIDGE_API_KEY`);
+  }
+  if (!activeKey) {
+    warn(`.env 缺 SPARK_API_KEY / ARK_API_KEY / CODING_BRIDGE_API_KEY；跳过 coding-bridge MCP 写入（避免写入空值/占位符）`);
+    return;
+  }
+
   const cfg = readJSON(CLAUDE_JSON) || {};
   cfg.mcpServers = cfg.mcpServers || {};
-  if (cfg.mcpServers['coding-bridge']?.command === 'uvx') {
-    info(`coding-bridge 已存在于 ${CLAUDE_JSON}（保留原配置）`);
-  } else {
-    backupOnce(CLAUDE_JSON);
-    cfg.mcpServers['coding-bridge'] = {
-      command: 'uvx',
-      args: ['--from', 'git+https://github.com/htmambo/coding-bridge-mcp.git', 'coding-bridge-mcp'],
-      env: {
-        PROVIDER: '${CODING_BRIDGE_PROVIDER:-' + cbProvider + '}',
-        API_KEY: '${CODING_BRIDGE_API_KEY}',
-        SPARK_API_KEY: '${SPARK_API_KEY}',
-        ARK_API_KEY: '${ARK_API_KEY}',
-      },
-    };
-    atomicWriteJSON(CLAUDE_JSON, cfg);
-    ok(`已写入 coding-bridge → ${CLAUDE_JSON}`);
+  const exists = cfg.mcpServers['coding-bridge']?.command === 'uvx';
+  // 已存在但 env 含占位符 ${...}（旧 install 路径遗留坏值）→ 修正为字面值
+  // 精确匹配 ${...} 模板语法，避免 key 字面值偶含 ${ 被误判触发无谓重写
+  const curEnv = cfg.mcpServers['coding-bridge']?.env || {};
+  const hasPlaceholder = Object.values(curEnv).some(v => typeof v === 'string' && /\$\{[^}]+\}/.test(v));
+  if (exists && !hasPlaceholder) {
+    info(`coding-bridge 已存在于 ${CLAUDE_JSON}（字面值完好，保留）`);
+    return;
   }
-}
-async function syncClaudeJsonKimi() {
-  const cfg = readJSON(CLAUDE_JSON) || {};
-  cfg.mcpServers = cfg.mcpServers || {};
-  if (cfg.mcpServers['kimi']?.command === 'uvx') {
-    info(`kimi 已存在于 ${CLAUDE_JSON}（保留原配置）`);
-  } else {
-    backupOnce(CLAUDE_JSON);
-    cfg.mcpServers['kimi'] = {
-      command: 'uvx',
-      args: ['--from', 'git+https://github.com/htmambo/kimimcp.git', 'kimimcp'],
-    };
-    atomicWriteJSON(CLAUDE_JSON, cfg);
-    ok(`已写入 kimi → ${CLAUDE_JSON}`);
-  }
+  backupOnce(CLAUDE_JSON);
+  const existingEnv = cfg.mcpServers['coding-bridge']?.env || {};
+  cfg.mcpServers['coding-bridge'] = {
+    command: 'uvx',
+    args: ['--from', 'git+https://github.com/htmambo/coding-bridge-mcp.git', 'coding-bridge-mcp'],
+    env: {
+      ...existingEnv,          // 保留用户自定义 env 键（与 _applyKeysToClaudeJson 逐键设语义对齐）
+      PROVIDER: provider,
+      API_KEY: activeKey,
+      SPARK_API_KEY: spark,
+      ARK_API_KEY: ark,
+    },
+  };
+  atomicWriteJSON(CLAUDE_JSON, cfg);
+  ok(`已写入 coding-bridge → ${CLAUDE_JSON}（字面值，provider=${provider}）`);
 }
 async function syncSettingsAllow() {
   const settings = readJSON(SETTINGS_JSON) || {};
@@ -1368,7 +1381,8 @@ async function main() {
     if (state.panel.kind === 'input') {
       if (k === 'enter' || k === '\r' || k === '\n') {
         if (state._tuiKeyInput) {
-          const val = state._inputBuf;
+          // trim：API key 首尾空格会致鉴权失败（保留中间空格）
+          const val = state._inputBuf.trim();
           state._inputBuf = '';
           state._tuiKeyInput = false;
           const cur = readEnvKey(state._tuiEnvKey);
@@ -1389,12 +1403,11 @@ async function main() {
       if (k === 'ctrl-c' || k === 'q' || k === 'Q' || k === 'esc') { running = false; break; }
       if (k.length === 1 && k >= ' ' && k <= '~') {
         // 字符模式下不重画全屏（避免 stdout 写阻塞导致后续 stdin onData 延迟）
-        // 直接更新光标行
-        if (/[a-zA-Z0-9_\-./+=]/.test(k)) {
-          state._inputBuf += k;
-          const display = state.panel.hidden ? partialMask(state._inputBuf) : state._inputBuf;
-          process.stdout.write(`\r\x1b[2K  ${state.panel.prompt}: ${c.cyan(display || '_')}`);
-        }
+        // 直接更新光标行。接受所有可打印 ASCII（含 : $ 等 API key 常见字符）；
+        // 转义由 atomicWriteJSON 的 JSON.stringify 处理。
+        state._inputBuf += k;
+        const display = state.panel.hidden ? partialMask(state._inputBuf) : state._inputBuf;
+        process.stdout.write(`\r\x1b[2K  ${state.panel.prompt}: ${c.cyan(display || '_')}`);
         continue;
       }
       continue;
