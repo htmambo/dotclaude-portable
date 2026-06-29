@@ -1,0 +1,12 @@
+[submodule "mcp/coding-bridge"]
+	path = mcp/coding-bridge
+	url = https://github.com/htmambo/coding-bridge-mcp.git
+	branch = main
+[submodule "mcp/kimi"]
+	path = mcp/kimi
+	url = https://github.com/htmambo/kimimcp.git
+	branch = main
+[submodule "mcp/codex"]
+	path = mcp/codex
+	url = https://github.com/htmambo/codexmcp.git
+	branch = main
