@@ -4,6 +4,43 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows
 [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **主供应商预设向导（configure.mjs 菜单 2）** —— 切换 Claude Code 本身后端（minimax / 讯飞 / 火山 / 自建中转等兼容服务）：
+  - 动态扫描 `~/.claude/*.json` + `global/json/*.base.json`，过滤系统文件后列出预设；用户级覆盖仓库自带同名预设
+  - 预设 JSON 顶层可选 `title` / `description` 厂商元数据，向导优先展示
+  - 按 `(key, value)` 子集识别「当前在用」预设（`081113e`）；显示格式见 Changed「预设显示精简」
+- **`install-ccstatusline` 子命令** —— 解除版本锁定，注入 ccstatusline-zh 到本机 settings.json（`6106a7b`）
+- **`pull-and-sync.sh`** —— 日常更新一键入口：`fetch → 检测远端更新 → fast-forward pull → install.sh --check`（`64f3793`）
+- **`nudge-review.sh` commit-msg hook** —— 强制外部审核标记（`76320ab`）
+
+### Changed
+
+- **外部审查 MCP submodule 化** —— `mcp/codex` / `mcp/coding-bridge` / `mcp/kimi` 三个外部审查 provider 由内嵌改为 git submodule（`af62eba`）
+- **configure.mjs 交互式统一配置向导** —— review 供应商 / 预设 / apply / 子命令统一入口（`0d976bb`），将原零散入口（含上述主供应商预设向导）整合为统一菜单
+- **ccstatusline 配置重排** —— 多行 + thinking-effort + context-bar（`79a35c2`）
+- **预设显示精简** —— 三段格式（`13b21ac`）
+- **backupOnce 抽公共库** —— 提到 `tools/lib/backup.mjs`（`544419c`）
+
+### Fixed
+
+- **[安全] configure.mjs 剥离 userinfo 凭据与 ANSI 转义** —— 防止终端泄漏与劫持（`bd4c776`）
+- **[安全] scan-secrets gitignore-aware** —— 跳过 `.env` 等被忽略的本地文件（`617f321`）
+- **configure.mjs TUI 状态机硬化** —— SIGINT handler 显式恢复 raw mode + exit（`305625c`）、setEnvKey 清理旧 `__new_*` 哨兵条目避免 map 无限增长（`aee95ae`）、补回 `showCurrentEnv` 非 TTY 降级路径（`934e373`）、KEY 文件权限收紧（`c452461`）
+- **install.mjs 鲁棒性** —— `installCodingBridgeMcp` 返回 boolean + 主流程检查（`05fd2d0`）、hook 已存在时无 `--force` 跳过避免静默覆盖（`0f07477`）、shell profile 改 begin/end 块标记 + 多实例循环 strip（`449aabd`）、`atomicWriteFile` 支持 mode + chmod 收紧（`822f358`）、修 `pruneBackups` 引用未声明 ctx 的 ReferenceError（`272623a`）、清理 `renderInstall` 冗余 existsSync（`711d767`）
+- **statusline worktree-branch 不显示** —— 兼容性修复（`991e04f`）
+- **coding-bridge 模板双层 timeout 配置** —— 补齐双层 timeout 防止 MCP 启动卡死（`d7e0d09`）
+- **跨 commit 综合审核 hardening #1 + #2** —— install + pull-sync（`9e91bf2`）
+- **2026-06-27 代码审查修复落地** —— 6 finding + 3 补充 + 4 外审硬化（`daa6f2a`）
+
+### Documentation
+
+- README + CONFIGURE 写入主供应商预设使用说明（`4d8f87a`）
+- CLAUDE.md 澄清 `runReview()` 为口头别名而非实现函数（`206c527`）
+- 任务文档归档：CONFIGURE_HARDEN / TOOLS_MJS_REVIEW_FIX（`93141cf`、`6a9f429`）
+
 ## [2.1.0] - 2026-06-23
 
 ### Added
