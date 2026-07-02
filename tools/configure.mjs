@@ -16,9 +16,9 @@
 //   ./tools/configure.mjs --dry-run       # 只打印动作
 //
 // 持久化约定：
-//   仓库根 .env   — REVIEW_PROVIDER / CODING_BRIDGE_PROVIDER / SPARK_API_KEY / ARK_API_KEY
-//   ~/.claude.json.mcpServers               — 同步 coding-bridge + kimi 段
-//   ~/.claude/settings.json.permissions.allow — 同步 review tools allow
+//   仓库根 .env   — REVIEW_PROVIDER / CODING_BRIDGE_PROVIDER / CODING_BRIDGE_API_KEY（+ 各 provider 专属 KEY 候选）
+//   ~/.claude.json.mcpServers               — 同步 coding-bridge + kimi + codex 段
+//   ~/.claude/settings.json.permissions.allow — 同步 review tools allow（含 mcp__codex__codex）
 'use strict';
 
 import { existsSync, readFileSync, writeFileSync, readdirSync, mkdirSync, renameSync, statSync, chmodSync } from 'node:fs';
@@ -429,21 +429,52 @@ async function confirm(question, defaultYes = false) {
 
 // ─── 业务：Review 供应商配置 ───────────────────────────
 // 外部 Review 供应商：扁平化 3 个独立 action
-// 1) 迅飞 KEY → SPARK_API_KEY
-// 2) 火山 KEY → ARK_API_KEY
-// 3) 供应商   → CODING_BRIDGE_PROVIDER (xfyun-coding / volcengine-coding)
-// 三者互相独立，可同时设；coding-bridge-mcp 内部按 provider 优先级匹配 key
-// （API_KEY → SPARK_API_KEY / ARK_API_KEY）
+// 1) 默认后端 → REVIEW_PROVIDER (coding-bridge / kimi / codex)（CLAUDE.md §"Provider resolution"）
+// 2) CB 供应商 → CODING_BRIDGE_PROVIDER (上游 8 个 provider，见 CB_PROVIDERS)
+// 3) CB API KEY → CODING_BRIDGE_API_KEY（通用入口；上游推荐只设这一个）
+// 上游 coding-bridge-mcp 按 provider 的 api_key_env_vars 链优先级匹配 key：
+//   API_KEY → <provider 专属 KEY>（详见 mcp/coding-bridge/.../providers.py）
 const REVIEW_ACTIONS = [
-  { id: 'spark-key',   label: '迅飞 KEY',    envKey: 'SPARK_API_KEY',         friendly: 'xfyun coding KEY' },
-  { id: 'ark-key',     label: '火山 KEY',    envKey: 'ARK_API_KEY',           friendly: 'volcengine ark KEY' },
-  { id: 'provider',    label: '供应商',      envKey: 'CODING_BRIDGE_PROVIDER', friendly: 'coding-bridge 后端' },
+  { id: 'provider',    label: '默认后端',    envKey: 'REVIEW_PROVIDER',         friendly: '默认 Review 后端（coding-bridge/kimi/codex）', isProvider: true },
+  { id: 'cb-backend',  label: 'CB 供应商',   envKey: 'CODING_BRIDGE_PROVIDER',   friendly: 'coding-bridge 后端', isCb: true },
+  { id: 'cb-key',      label: 'CB API KEY',  envKey: 'CODING_BRIDGE_API_KEY',    friendly: 'coding-bridge 通用 API KEY' },
 ];
 
-const CODING_BRIDGE_PROVIDERS = [
-  { id: 'xfyun-coding', label: 'xfyun-coding', description: '讯飞 coding（默认）' },
-  { id: 'volcengine-coding', label: 'volcengine-coding', description: '火山引擎 ark' },
+// REVIEW_PROVIDER 取值（CLAUDE.md：codex | kimi | coding-bridge）
+const REVIEW_PROVIDERS = [
+  { id: 'coding-bridge', label: 'coding-bridge', description: '专用 review 接口（默认）' },
+  { id: 'kimi',          label: 'kimi',          description: '通用 chat 兜底' },
+  { id: 'codex',         label: 'codex',         description: 'Codex CLI 包装（sandbox=read-only）' },
 ];
+
+// coding-bridge-mcp 上游 provider 表（与 mcp/coding-bridge/src/coding_bridge_mcp/providers.py 对齐）
+// keyEnvVars: .env 中该 provider 的 key 候选（首个非空即生效；首项恒为通用 CODING_BRIDGE_API_KEY）
+//   上游 api_key_env_vars 首项是通用 API_KEY（我们在 MCP env 段写字面值，故 .env 侧用 CODING_BRIDGE_API_KEY）
+// ws: websocket 模式（xfyun-websocket 还需 SPARK_APP_ID / SPARK_API_SECRET，本表不管理）
+const CB_PROVIDERS = [
+  { id: 'xfyun-coding',      label: 'xfyun-coding',      description: '讯飞星辰 MaaS Coding Plan（默认）',     keyEnvVars: ['CODING_BRIDGE_API_KEY', 'SPARK_API_KEY'] },
+  { id: 'xfyun-http',        label: 'xfyun-http',        description: '星火大模型通用 OpenAI 兼容',             keyEnvVars: ['CODING_BRIDGE_API_KEY', 'SPARK_API_KEY'] },
+  { id: 'xfyun-websocket',   label: 'xfyun-websocket',   description: '星火原生 WebSocket（需 APP_ID/SECRET）', keyEnvVars: ['SPARK_API_KEY'], ws: true },
+  { id: 'volcengine-coding', label: 'volcengine-coding', description: '火山方舟 Coding Plan',                   keyEnvVars: ['CODING_BRIDGE_API_KEY', 'ARK_API_KEY'] },
+  { id: 'qianfan-coding',    label: 'qianfan-coding',    description: '百度智能云千帆 Coding Plan',              keyEnvVars: ['CODING_BRIDGE_API_KEY', 'QIANFAN_API_KEY'] },
+  { id: 'opencode-go',       label: 'opencode-go',       description: 'OpenCode Go（experimental）',            keyEnvVars: ['CODING_BRIDGE_API_KEY', 'OPENCODE_API_KEY'] },
+  { id: 'sensenova',         label: 'sensenova',         description: '商汤日日新（配额极低）',                   keyEnvVars: ['CODING_BRIDGE_API_KEY', 'SENSENOVA_API_KEY'] },
+  { id: 'deepseek',          label: 'deepseek',          description: 'DeepSeek 官方 API',                       keyEnvVars: ['CODING_BRIDGE_API_KEY', 'DEEPSEEK_API_KEY'] },
+];
+
+// 解析当前 CB provider 的生效 key（镜像上游 api_key_env_vars 优先级链）
+// 返回 { provider, activeKey, source, profile, ws }；activeKey 为空表示未配置
+function resolveActiveCbKey(providerOverride) {
+  const provider = providerOverride || readEnvKey('CODING_BRIDGE_PROVIDER') || 'xfyun-coding';
+  const profile = CB_PROVIDERS.find(p => p.id === provider) || CB_PROVIDERS[0];
+  let activeKey = '';
+  let source = '';
+  for (const k of profile.keyEnvVars) {
+    const v = readEnvKey(k);
+    if (v && v.trim() !== '') { activeKey = v; source = k; break; }
+  }
+  return { provider, activeKey, source, profile };
+}
 
 // 按用户原始规则：先查 .env，已存在→提醒并询问是否修改；无/空→直接输入
 async function ensureApiKey(envKeyName, friendlyName) {
@@ -477,24 +508,19 @@ async function configureReviewProvider() {
   // 显示当前三个 envKey 状态
   for (const a of REVIEW_ACTIONS) {
     const v = readEnvKey(a.envKey);
-    let status;
-    if (a.id === 'provider') {
-      status = v ? `${v} (已设)` : c.yellow('未设置');
-    } else {
-      status = v ? c.green('已设置') : c.yellow('未设置');
-    }
+    // provider / cb-backend 是枚举值，显示当前值；KEY 仅显示已设/未设
+    const status = (a.isProvider || a.isCb)
+      ? (v ? `${v} (已设)` : c.yellow('未设置'))
+      : (v ? c.green('已设置') : c.yellow('未设置'));
     info(`  ${c.bold(a.label.padEnd(10))}  ${a.envKey} = ${status}`);
   }
 
   // 把 action 转成 choose 选项（带实时状态）
   const opts = REVIEW_ACTIONS.map(a => {
     const v = readEnvKey(a.envKey);
-    let status;
-    if (a.id === 'provider') {
-      status = v ? `${v} (已设)` : c.yellow('未设置');
-    } else {
-      status = v ? c.green('已设置') : c.yellow('未设置');
-    }
+    const status = (a.isProvider || a.isCb)
+      ? (v ? `${v} (已设)` : c.yellow('未设置'))
+      : (v ? c.green('已设置') : c.yellow('未设置'));
     return { id: a.id, label: a.label, description: `${a.envKey} = ${status}` };
   });
 
@@ -506,11 +532,23 @@ async function configureReviewProvider() {
 
   const env = loadEnv();
   const updated = new Set();
-  if (action.id === 'provider') {
-    // 选供应商：走 CODING_BRIDGE_PROVIDERS pick
+  if (action.isProvider) {
+    // 选默认 Review 后端：REVIEW_PROVIDER (coding-bridge / kimi / codex)
+    const cur = readEnvKey(action.envKey) || 'coding-bridge';
+    const rpSel = await choose('默认 Review 后端', REVIEW_PROVIDERS,
+      { default: REVIEW_PROVIDERS.findIndex(p => p.id === cur) }
+    );
+    if (rpSel.quit) return 'quit';
+    if (rpSel.back) return 'back';
+    setEnvKey(env.map, action.envKey, rpSel.choice.id); updated.add(action.envKey);
+    // 切换默认后端 → 保证对应 MCP 段就位 + allow 列表完整
+    await syncReviewMcpServers();
+    await syncSettingsAllow();
+  } else if (action.isCb) {
+    // 选 coding-bridge 后端：CB_PROVIDERS pick（8 个 provider）
     const cur = readEnvKey(action.envKey) || 'xfyun-coding';
-    const cbSel = await choose('coding-bridge 后端', CODING_BRIDGE_PROVIDERS,
-      { default: CODING_BRIDGE_PROVIDERS.findIndex(p => p.id === cur) }
+    const cbSel = await choose('coding-bridge 后端', CB_PROVIDERS.map(p => ({ id: p.id, label: p.label, description: p.description })),
+      { default: Math.max(0, CB_PROVIDERS.findIndex(p => p.id === cur)) }
     );
     if (cbSel.quit) return 'quit';
     if (cbSel.back) return 'back';
@@ -531,23 +569,22 @@ async function configureReviewProvider() {
 // 把 coding-bridge 同步到 ~/.claude.json.mcpServers（写字面值，不破坏其他 server）
 // 设计：与 _applyKeysToClaudeJson 对齐——MCP env 段是字面值，不经 shell 展开，
 // 故必须写已解析的 KEY；占位符 ${...} 会导致鉴权失败。
-// kimi MCP 段由 install.mjs:installCodingBridgeJson 写入，configure 侧不重复。
+// kimi / codex MCP 段由 syncReviewMcpServers 维护；本函数只管 coding-bridge。
+// 数据驱动：provider 与 key 链均来自 CB_PROVIDERS / resolveActiveCbKey，
+// 新增 provider 无需改此处（与上游 providers.py 解耦）。
 async function syncClaudeJsonCodingBridge(cbProvider) {
-  // ST-7 硬化：读 .env 字面值；缺 key 时不写空值/占位符
-  const provider = readEnvKey('CODING_BRIDGE_PROVIDER') || cbProvider || 'xfyun-coding';
-  const spark = readEnvKey('SPARK_API_KEY') || '';
-  const ark = readEnvKey('ARK_API_KEY') || '';
-  const generic = readEnvKey('CODING_BRIDGE_API_KEY') || '';
-  let activeKey;
-  if (provider === 'xfyun-coding') activeKey = spark || generic;
-  else if (provider === 'volcengine-coding') activeKey = ark || generic;
-  else activeKey = generic;
-  // provider 指定但专属 key 缺失 → 静默回退到 generic 会用错 key，warn 提示
-  if (activeKey && ((provider === 'xfyun-coding' && !spark) || (provider === 'volcengine-coding' && !ark))) {
-    warn(`未设置 ${provider === 'xfyun-coding' ? 'SPARK_API_KEY' : 'ARK_API_KEY'}，回退使用 CODING_BRIDGE_API_KEY`);
+  const { provider, activeKey, source, profile } = resolveActiveCbKey(cbProvider);
+  // 通用 key 缺失但 provider 专属 key 在用 → 提示用户首选通用 key（上游推荐只设 API_KEY）
+  if (activeKey && source !== 'CODING_BRIDGE_API_KEY') {
+    warn(`当前通过 ${source} 鉴权；上游推荐改设通用 CODING_BRIDGE_API_KEY 以便切换 provider`);
   }
   if (!activeKey) {
-    warn(`.env 缺 SPARK_API_KEY / ARK_API_KEY / CODING_BRIDGE_API_KEY；跳过 coding-bridge MCP 写入（避免写入空值/占位符）`);
+    if (profile.ws) {
+      // xfyun-websocket 鉴权依赖 SPARK_APP_ID/SECRET，不在此处强制；跳过 key 写入
+      warn(`provider=${provider} 为 WebSocket 模式，需 SPARK_APP_ID/SPARK_API_SECRET；跳过 API_KEY 写入`);
+    } else {
+      warn(`.env 缺 CODING_BRIDGE_API_KEY（或 ${profile.keyEnvVars.join(' / ')}）；跳过 coding-bridge MCP 写入（避免写入空值/占位符）`);
+    }
     return;
   }
 
@@ -558,8 +595,11 @@ async function syncClaudeJsonCodingBridge(cbProvider) {
   // 精确匹配 ${...} 模板语法，避免 key 字面值偶含 ${ 被误判触发无谓重写
   const curEnv = cfg.mcpServers['coding-bridge']?.env || {};
   const hasPlaceholder = Object.values(curEnv).some(v => typeof v === 'string' && /\$\{[^}]+\}/.test(v));
-  if (exists && !hasPlaceholder) {
-    info(`coding-bridge 已存在于 ${CLAUDE_JSON}（字面值完好，保留）`);
+  // 仅当 PROVIDER 或 API_KEY 与目标不一致（或含占位符）时才重写，避免无谓 IO
+  const curProvider = curEnv.PROVIDER;
+  const curApiKey = curEnv.API_KEY;
+  if (exists && !hasPlaceholder && curProvider === provider && curApiKey === activeKey) {
+    info(`coding-bridge 已存在于 ${CLAUDE_JSON}（provider=${provider}，字面值完好，保留）`);
     return;
   }
   backupOnce(CLAUDE_JSON);
@@ -571,18 +611,58 @@ async function syncClaudeJsonCodingBridge(cbProvider) {
       ...existingEnv,          // 保留用户自定义 env 键（与 _applyKeysToClaudeJson 逐键设语义对齐）
       PROVIDER: provider,
       API_KEY: activeKey,
-      SPARK_API_KEY: spark,
-      ARK_API_KEY: ark,
     },
   };
   atomicWriteJSON(CLAUDE_JSON, cfg);
   ok(`已写入 coding-bridge → ${CLAUDE_JSON}（字面值，provider=${provider}）`);
 }
+
+// 把 kimi / codex MCP 段同步到 ~/.claude.json.mcpServers（与 install.mjs:installCodingBridgeJson 对齐）
+// kimi / codex 不需要 API key（kimi 读 ~/.claude/kimi.json；codex 调本地 codex CLI），
+// 故只需保证 server 条目存在 + 字面值 args 完好；install.mjs 写入后 configure 侧补齐幂等。
+// af62eba 后 codex 成为正式 submodule，但 install.mjs 尚未登记 codex → 这里兜底写入。
+function _ensureReviewMcpServer(cfg, name, args) {
+  cfg.mcpServers = cfg.mcpServers || {};
+  const cur = cfg.mcpServers[name];
+  const commandOk = cur?.command === 'uvx';
+  const argsOk = cur?.args && JSON.stringify(cur.args) === JSON.stringify(args);
+  if (commandOk && argsOk) return false; // 已完好
+  cfg.mcpServers[name] = {
+    command: 'uvx',
+    args,
+    transport: 'stdio',
+    ...(cur?.timeout ? { timeout: cur.timeout } : {}),
+    ...(cur?.env && Object.keys(cur.env).length ? { env: cur.env } : {}),
+  };
+  return true;
+}
+async function syncReviewMcpServers() {
+  const cfg = readJSON(CLAUDE_JSON) || {};
+  let changed = false;
+  // kimi：CLAUDE.md fallback 链成员
+  if (_ensureReviewMcpServer(cfg, 'kimi', ['--from', 'git+https://github.com/htmambo/kimimcp.git', 'kimimcp'])) changed = true;
+  // codex：af62eba 新增的审查 submodule，install.mjs 未登记，configure 侧补齐
+  if (_ensureReviewMcpServer(cfg, 'codex', ['--from', 'git+https://github.com/htmambo/codexmcp.git', 'codexmcp'])) changed = true;
+  if (!changed) {
+    info(`kimi + codex MCP 段已就位于 ${CLAUDE_JSON}`);
+    return;
+  }
+  backupOnce(CLAUDE_JSON);
+  atomicWriteJSON(CLAUDE_JSON, cfg);
+  ok(`已同步 kimi + codex MCP 段 → ${CLAUDE_JSON}`);
+}
 async function syncSettingsAllow() {
   const settings = readJSON(SETTINGS_JSON) || {};
   settings.permissions = settings.permissions || {};
   settings.permissions.allow = settings.permissions.allow || [];
-  const needed = ['mcp__coding-bridge__review_code', 'mcp__coding-bridge__review_plan', 'mcp__kimi__kimi'];
+  // 三家外部 Review MCP 的 tool allow：codex 在 af62eba 后成为正式 submodule，
+  // mcp__codex__codex 须一并 allow，否则切换 REVIEW_PROVIDER=codex 时调用被拦
+  const needed = [
+    'mcp__coding-bridge__review_code',
+    'mcp__coding-bridge__review_plan',
+    'mcp__kimi__kimi',
+    'mcp__codex__codex',
+  ];
   const missing = needed.filter(t => !settings.permissions.allow.includes(t));
   if (missing.length === 0) {
     info('settings.json.permissions.allow: review tools 已就位');
@@ -770,7 +850,8 @@ function _detectClaudeCode() {
 }
 function _applyKeysToClaudeJson(dotenv, dryRun) {
   // 把 .env 里的 KEY 字面值写入 ~/.claude.json.mcpServers.coding-bridge.env
-  // 保留原有 mcpServers 其它段（kimi 等）
+  // 保留原有 mcpServers 其它段（kimi / codex 等）
+  // 数据驱动：provider 与 key 链来自 CB_PROVIDERS（与上游 providers.py 对齐）
   const cfg = readJSON(CLAUDE_JSON) || {};
   cfg.mcpServers = cfg.mcpServers || {};
   if (cfg.mcpServers['coding-bridge']?.command !== 'uvx') {
@@ -783,25 +864,21 @@ function _applyKeysToClaudeJson(dotenv, dryRun) {
   const cb = cfg.mcpServers['coding-bridge'];
   cb.env = cb.env || {};
   const provider = dotenv.CODING_BRIDGE_PROVIDER || 'xfyun-coding';
-  cb.env.PROVIDER = provider;
-  // 通用 API_KEY 字段：写当前选中 provider 的实际 key（xfyun→SPARK、volcengine→ARK）
-  // coding-bridge-mcp 内部优先匹配 SPARK_API_KEY / ARK_API_KEY；API_KEY 作为兜底
-  // 严格相等匹配（不 startsWith）：未来新增 provider 需显式 if-else，避免误选 key
+  const profile = CB_PROVIDERS.find(p => p.id === provider) || CB_PROVIDERS[0];
+  // 镜像上游 api_key_env_vars 优先级链：首个非空即生效
   let activeKey = '';
-  if (provider === 'xfyun-coding') activeKey = dotenv.SPARK_API_KEY || dotenv.CODING_BRIDGE_API_KEY || '';
-  else if (provider === 'volcengine-coding') activeKey = dotenv.ARK_API_KEY || dotenv.CODING_BRIDGE_API_KEY || '';
-  else activeKey = dotenv.CODING_BRIDGE_API_KEY || '';
+  for (const k of profile.keyEnvVars) {
+    if (dotenv[k]) { activeKey = dotenv[k]; break; }
+  }
+  cb.env.PROVIDER = provider;
   cb.env.API_KEY = activeKey;
-  // 保留两个专属 key（即使当前 provider 不用，也给未来切换用）
-  cb.env.SPARK_API_KEY = dotenv.SPARK_API_KEY || '';
-  cb.env.ARK_API_KEY = dotenv.ARK_API_KEY || '';
   if (dryRun) return cfg;
   backupOnce(CLAUDE_JSON);
   atomicWriteJSON(CLAUDE_JSON, cfg);
   return cfg;
 }
 // 抽公共逻辑：解析 .env → 校验 → 写 KEY → 检测 Claude Code
-// 返回 { lines, hasError, dotenvFlat, haveSpark, haveArk, haveProvider } 给两条 caller 共用
+// 返回 { lines, hasError, dotenvFlat, haveKey, haveProvider } 给两条 caller 共用
 function _applyCore() {
   const dotenv = loadEnv().map;
   const dotenvFlat = {};
@@ -811,8 +888,10 @@ function _applyCore() {
       if (m) dotenvFlat[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
     }
   }
-  const haveSpark = !!dotenvFlat.SPARK_API_KEY;
-  const haveArk = !!dotenvFlat.ARK_API_KEY;
+  // 当前 provider 的 key 是否就位（按其 keyEnvVars 链）
+  const provider = dotenvFlat.CODING_BRIDGE_PROVIDER || 'xfyun-coding';
+  const profile = CB_PROVIDERS.find(p => p.id === provider) || CB_PROVIDERS[0];
+  const haveKey = profile.keyEnvVars.some(k => !!dotenvFlat[k]);
   const haveProvider = !!dotenvFlat.CODING_BRIDGE_PROVIDER;
   const lines = [];
   let hasError = false;
@@ -820,9 +899,9 @@ function _applyCore() {
     lines.push(c.red(`  ✗ 找不到 ${ENV_FILE} 或为空`));
     lines.push(c.dim('  先在 "外部 Review 供应商" 设一个 KEY'));
     hasError = true;
-  } else if (!haveSpark && !haveArk) {
-    lines.push(c.red('  ✗ .env 没有 SPARK_API_KEY / ARK_API_KEY 任一'));
-    lines.push(c.dim('  先在 "外部 Review 供应商" 设 KEY 再应用'));
+  } else if (!haveKey) {
+    lines.push(c.red(`  ✗ provider=${provider} 缺 key（需 ${profile.keyEnvVars.join(' / ')} 任一）`));
+    lines.push(c.dim('  先在 "外部 Review 供应商" 设 CB API KEY 再应用'));
     hasError = true;
   } else {
     if (DRY_RUN) {
@@ -830,7 +909,7 @@ function _applyCore() {
     } else {
       _applyKeysToClaudeJson(dotenvFlat, false);
       lines.push(c.green(`  ✓ KEY 字面值已写入 ${CLAUDE_JSON}`));
-      lines.push(c.dim(`    mcpServers.coding-bridge.env：PROVIDER + SPARK_API_KEY + ARK_API_KEY`));
+      lines.push(c.dim(`    mcpServers.coding-bridge.env：PROVIDER=${provider} + API_KEY`));
     }
     const cc = _detectClaudeCode();
     if (cc.running) {
@@ -841,9 +920,9 @@ function _applyCore() {
       lines.push(c.green('  ✓ 未检测到 Claude Code 进程；下次启动自动应用'));
     }
     lines.push('');
-    lines.push(c.dim(`  env 状态: SPARK=${haveSpark ? '✓' : '✗'}  ARK=${haveArk ? '✓' : '✗'}  PROVIDER=${dotenvFlat.CODING_BRIDGE_PROVIDER || '未设'}`));
+    lines.push(c.dim(`  env 状态: provider=${provider}  key=${haveKey ? '✓' : '✗'}  PROVIDER_env=${dotenvFlat.CODING_BRIDGE_PROVIDER || '未设'}`));
   }
-  return { lines, hasError, dotenvFlat, haveSpark, haveArk, haveProvider };
+  return { lines, hasError, dotenvFlat, haveKey, haveProvider };
 }
 async function configureApply() {
   title('应用 / 重启 Claude Code');
@@ -856,7 +935,7 @@ async function configureApply() {
 // Statusline / HUD 不在主菜单（已经走 install-ccstatusline symlink 装），
 // 它的状态在"辅助子模块"面板里只读展示
 const TOP_MENU = [
-  { id: 'review', label: '外部 Review 供应商', description: '迅飞/火山 KEY + coding-bridge 后端' },
+  { id: 'review', label: '外部 Review 供应商', description: '默认后端 + CB 供应商(8 家) + CB API KEY' },
   { id: 'preset', label: 'Claude Code 主供应商预设', description: '动态扫描 ~/.claude/*.json' },
   { id: 'apply', label: '应用 / 重启 Claude Code', description: '把 KEY 注入 shell env + 检测 MCP' },
   { id: 'subs', label: '辅助子模块（只读）', description: 'memory MCP / pre-push / pre-sync-docs / statusline 状态' },
@@ -1032,7 +1111,7 @@ const _panelOps = {
 };
 
 // ─── Review 业务完整 TUI 化（替代 _handleSubPick 的降级路径） ──
-// 3 个独立 action：迅飞 KEY / 火山 KEY / 供应商
+// 3 个独立 action：默认后端 / CB 供应商 / CB API KEY
 function _tuiReviewRun(state) {
   const choice = state.panel.options[state.subIdx];
   const action = REVIEW_ACTIONS.find(a => a.id === choice.id);
@@ -1040,51 +1119,77 @@ function _tuiReviewRun(state) {
   const env0 = loadEnv();
   state._tuiEnv = env0;
   state._tuiUpdated = new Set();
-  if (action.id === 'provider') {
-    // 选供应商：push pick 面板
-    const cur = readEnvKey(action.envKey) || 'xfyun-coding';
+  if (action.isProvider) {
+    // 选默认 Review 后端：REVIEW_PROVIDER (coding-bridge / kimi / codex)
+    const cur = readEnvKey(action.envKey) || 'coding-bridge';
     _panelOps.push(state, {
       kind: 'pick',
-      breadcrumb: '主菜单 > 外部 Review 供应商 > 供应商',
-      title: 'coding-bridge 后端',
-      options: CODING_BRIDGE_PROVIDERS.map(p => ({ id: p.id, label: p.label, description: p.description })),
-      defaultIdx: CODING_BRIDGE_PROVIDERS.findIndex(p => p.id === cur),
+      breadcrumb: '主菜单 > 外部 Review 供应商 > 默认后端',
+      title: '默认 Review 后端',
+      options: REVIEW_PROVIDERS.map(p => ({ id: p.id, label: p.label, description: p.description })),
+      defaultIdx: REVIEW_PROVIDERS.findIndex(p => p.id === cur),
     });
     state.subIdx = state.panel.defaultIdx ?? 0;
     state._tuiEnvKey = action.envKey; // finalize 时用
-    state._tuiSyncFn = () => syncClaudeJsonCodingBridge(CODING_BRIDGE_PROVIDERS[state.subIdx].id);
+    state._tuiPickKind = 'review-provider';
+    // 切换默认后端 → 保证对应 MCP 段就位 + allow 列表完整（含 codex）
+    state._tuiSyncFn = () => { syncReviewMcpServers(); syncSettingsAllow(); };
+    state._context = 'review-provider';
+    state._render();
+  } else if (action.isCb) {
+    // 选 coding-bridge 后端：CB_PROVIDERS pick（8 个 provider）
+    const cur = readEnvKey(action.envKey) || 'xfyun-coding';
+    _panelOps.push(state, {
+      kind: 'pick',
+      breadcrumb: '主菜单 > 外部 Review 供应商 > CB 供应商',
+      title: 'coding-bridge 后端',
+      options: CB_PROVIDERS.map(p => ({ id: p.id, label: p.label, description: p.description })),
+      defaultIdx: Math.max(0, CB_PROVIDERS.findIndex(p => p.id === cur)),
+    });
+    state.subIdx = state.panel.defaultIdx ?? 0;
+    state._tuiEnvKey = action.envKey; // finalize 时用
+    state._tuiPickKind = 'cb-provider';
+    state._tuiSyncFn = () => syncClaudeJsonCodingBridge(CB_PROVIDERS[state.subIdx].id);
     state._context = 'review-provider';
     state._render();
   } else {
-    // 迅飞 KEY / 火山 KEY：直接走 input 面板
+    // CB API KEY：直接走 input 面板
     _tuiPushKeyPanel(state, action.envKey, action.friendly, null);
   }
 }
 function _tuiReviewProviderSelected(state) {
   // 选完供应商 → 写 env + 弹结果
-  // _tuiReviewRun 在 provider 分支 push 了 review top（line 928）到 panelStack，
-  // 然后替换 state.panel = inner supplier pick（**没** push inner pick）。
-  // 所以 panelStack 顶 = review top，state.panel = inner supplier pick。
+  // _tuiReviewRun 在 pick 分支 push 了 review top 到 panelStack，
+  // 然后替换 state.panel = inner pick（**没** push inner pick）。
+  // 所以 panelStack 顶 = review top，state.panel = inner pick。
   // message 出栈要拿到 review top——但 message 任意键处理 pop 后会重生成
   // （_topEntry 标志），所以这里**不 push**，让 panelStack 仍 = [review_top]
   // message 出栈 pop → review_top → _topEntry 触发重生成 ✅
-  const cb = state.panel.options[state.subIdx];
-  setEnvKey(state._tuiEnv.map, state._tuiEnvKey, cb.id);
+  const picked = state.panel.options[state.subIdx];
+  setEnvKey(state._tuiEnv.map, state._tuiEnvKey, picked.id);
   state._tuiUpdated.add(state._tuiEnvKey);
   if (state._tuiSyncFn) { try { state._tuiSyncFn(); } catch (e) { err(`同步失败: ${e.message}`); } }
   saveEnv(state._tuiEnv, state._tuiUpdated.size > 0);
+  // 文案按 pick 类型分化：review-provider（默认后端）vs cb-provider（CB 供应商）
+  const isReviewProvider = state._tuiPickKind === 'review-provider';
+  const lines = isReviewProvider ? [
+    c.green(`  ${state._tuiEnvKey} = ${picked.id}`),
+    c.dim('  切换默认 Review 后端；对应 MCP 段已同步到 ~/.claude.json，allow 列表已补齐'),
+    c.dim('  coding-bridge 后端与 KEY 是独立的（见 "CB 供应商" / "CB API KEY"）'),
+    c.dim('  按任意键返回'),
+  ] : [
+    c.green(`  ${state._tuiEnvKey} = ${picked.id}`),
+    c.dim('  coding-bridge-mcp 启动时按该 provider 的 key 优先级链匹配 KEY（见 mcp/coding-bridge/.../providers.py）'),
+    c.dim('  KEY 是独立的（见 "CB API KEY"）；上游推荐只设通用 CODING_BRIDGE_API_KEY'),
+    c.dim('  按任意键返回'),
+  ];
   _panelOps.replace(state, {
     kind: 'message',
-    breadcrumb: '主菜单 > 外部 Review 供应商 > 供应商 > 结果',
-    title: '✓ 已切换供应商',
-    lines: [
-      c.green(`  ${state._tuiEnvKey} = ${cb.id}`),
-      c.dim('  coding-bridge-mcp 启动时会按这个 provider 匹配对应的 KEY（API_KEY → SPARK_API_KEY / ARK_API_KEY）'),
-      c.dim('  KEY 是独立的（见 "迅飞 KEY" / "火山 KEY"）'),
-      c.dim('  按任意键返回'),
-    ],
+    breadcrumb: `主菜单 > 外部 Review 供应商 > ${isReviewProvider ? '默认后端' : 'CB 供应商'} > 结果`,
+    title: '✓ 已切换',
+    lines,
   });
-  state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null; state._tuiSyncFn = null;
+  state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null; state._tuiSyncFn = null; state._tuiPickKind = null;
   state._context = 'review';
   state._render();
 }
@@ -1134,7 +1239,7 @@ function _tuiFinalizeReview(state) {
     ],
   });
   // 清临时状态
-  state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null; state._tuiFriendly = null; state._tuiSyncFn = null; state._tuiCbId = null; state._tuiKeyConfirm = false; state._tuiKeyInput = false;
+  state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null; state._tuiFriendly = null; state._tuiSyncFn = null; state._tuiCbId = null; state._tuiPickKind = null; state._tuiKeyConfirm = false; state._tuiKeyInput = false;
   state._context = 'review';
   state._render();
 }
@@ -1194,17 +1299,13 @@ function _tuiApply(state) {
 
 // ─── 各主项的入口面板构造 ──────────────────────────────
 function _panelReviewTop() {
-  // 3 个独立 action：迅飞 KEY / 火山 KEY / 供应商
+  // 3 个独立 action：默认后端 / CB 供应商 / CB API KEY
   // 注意：description 不能含 ANSI——必须纯文本；颜色在 _renderSubRow 里按 isSet 标志上
   const opts = REVIEW_ACTIONS.map(a => {
     const v = readEnvKey(a.envKey);
     const isSet = !!(v && v.trim() !== '');
-    let status;
-    if (a.id === 'provider') {
-      status = v ? `${v} (已设)` : '未设置';
-    } else {
-      status = isSet ? '已设置' : '未设置';
-    }
+    // provider / cb-backend 是枚举值，显示当前值；KEY 仅显示已设/未设
+    const status = a.isProvider || a.isCb ? (v ? `${v} (已设)` : '未设置') : (isSet ? '已设置' : '未设置');
     return { id: a.id, label: a.label, description: `${a.envKey} = ${status}`, isSet };
   });
   return {
@@ -1254,14 +1355,14 @@ function _panelApply() {
       if (m) dotenv[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
     }
   }
-  const haveSpark = !!dotenv.SPARK_API_KEY;
-  const haveArk = !!dotenv.ARK_API_KEY;
+  const provider = dotenv.CODING_BRIDGE_PROVIDER || 'xfyun-coding';
+  const profile = CB_PROVIDERS.find(p => p.id === provider) || CB_PROVIDERS[0];
+  const haveKey = profile.keyEnvVars.some(k => !!dotenv[k]);
   const haveProvider = !!dotenv.CODING_BRIDGE_PROVIDER;
-  const ready = haveSpark || haveArk;
-  const spark = haveSpark ? c.green('已设置') : c.yellow('未设置');
-  const ark = haveArk ? c.green('已设置') : c.yellow('未设置');
-  const provider = haveProvider ? dotenv.CODING_BRIDGE_PROVIDER : c.yellow('未设置');
-  const desc = `SPARK=${spark}  ARK=${ark}  PROVIDER=${provider}`;
+  const ready = haveKey;
+  const keyState = haveKey ? c.green('已设置') : c.yellow('未设置');
+  const providerState = haveProvider ? provider : c.yellow('未设置');
+  const desc = `KEY=${keyState}  PROVIDER=${providerState}`;
   return {
     kind: 'pick',
     breadcrumb: '主菜单 > 应用 / 重启 Claude Code',
@@ -1293,11 +1394,19 @@ function _panelSubsystems() {
   };
 }
 function _panelShowEnv() {
-  const keys = ['REVIEW_PROVIDER', 'CODING_BRIDGE_PROVIDER', 'SPARK_API_KEY', 'ARK_API_KEY'];
+  // 通用 KEY + 当前 provider 的生效 key 链 + 全部 CB provider 专属 KEY 候选
+  const keys = ['REVIEW_PROVIDER', 'CODING_BRIDGE_PROVIDER', 'CODING_BRIDGE_API_KEY'];
+  // 收集所有 provider 的专属 key（去重，保持出现顺序）
+  const seen = new Set(keys);
+  for (const p of CB_PROVIDERS) for (const k of p.keyEnvVars) if (!seen.has(k)) { seen.add(k); keys.push(k); }
   const lines = keys.map(k => {
     const v = readEnvKey(k);
     return `  ${c.bold(k)} = ${v ? c.green(maskValue(k, v)) : c.gray('(未设)')}`;
   });
+  // 附当前 provider 的生效 key 源
+  const { provider, source, profile } = resolveActiveCbKey();
+  lines.push('');
+  lines.push(c.dim(`  当前 CB provider=${provider}；生效 key 源: ${source || '（未配置）'}（链: ${profile.keyEnvVars.join(' → ')}）`));
   return {
     kind: 'message',
     _topEntry: true,
@@ -1356,7 +1465,7 @@ async function main() {
     //   下钻面板：'review-provider' / 'review-key'
     _context: 'review', // 初始化 = mainIdx 0 = review
     // TUI 化业务临时态
-    _tuiEnv: null, _tuiUpdated: null, _tuiCbId: null,
+    _tuiEnv: null, _tuiUpdated: null, _tuiCbId: null, _tuiPickKind: null,
     _tuiEnvKey: null, _tuiFriendly: null, _tuiSyncFn: null,
     _tuiKeyConfirm: false, _tuiKeyInput: false,
     _inputBuf: '',
