@@ -191,6 +191,7 @@ const _kpQueue = [];
 const _kpWaiters = [];
 let _kpBuf = '';
 let _kpStarted = false;
+let _escTimer = null; // 单独 Esc 超时句柄（消歧 \x1b vs 方向键 \x1b[.. 序列）
 function _isCompleteKey(buf) {
   if (buf.length === 0) return 0;
   const c0 = buf[0];
@@ -209,17 +210,36 @@ function _startKpCollector() {
   stdin.resume();
   stdin.on('data', (chunk) => {
     _kpBuf += chunk.toString('utf8');
+    // 消费所有已完整的 keypress
     while (_kpBuf.length > 0) {
       const n = _isCompleteKey(_kpBuf);
-      if (n === 0) return;
+      if (n === 0) {
+        // 不完整：仅当首字节是单独 Esc（\x1b）且缓冲只有这一字节时，
+        // 启动短超时——方向键等 \x1b[.. 序列在毫秒内整段到达，
+        // 超时未凑齐即判定为用户单独按下的 Esc，避免"按 Esc 后还得再按一键"。
+        if (_kpBuf === '\x1b') {
+          if (_escTimer) clearTimeout(_escTimer);
+          _escTimer = setTimeout(() => {
+            _escTimer = null;
+            if (_kpBuf === '\x1b') {
+              const key = _kpBuf; _kpBuf = '';
+              if (_kpWaiters.length) _kpWaiters.shift()(key);
+              else _kpQueue.push(key);
+            }
+          }, 50);
+        }
+        return;
+      }
+      // 已完整：取消任何挂起的 Esc 超时（方向键序列抢先到达）
+      if (_escTimer) { clearTimeout(_escTimer); _escTimer = null; }
       const key = _kpBuf.slice(0, n);
       _kpBuf = _kpBuf.slice(n);
       if (_kpWaiters.length) _kpWaiters.shift()(key);
       else _kpQueue.push(key);
     }
   });
-  // 退出时关闭 raw mode
-  process.on('exit', () => { if (stdin.isRaw) stdin.setRawMode(false); });
+  // 退出时关闭 raw mode + 清挂起超时
+  process.on('exit', () => { if (_escTimer) clearTimeout(_escTimer); if (stdin.isRaw) stdin.setRawMode(false); });
   // SIGINT 独立 handler：恢复 raw mode + 退出；once 避免与其他 handler 冲突
   process.once('SIGINT', () => {
     if (stdin.isRaw) stdin.setRawMode(false);
