@@ -1057,7 +1057,7 @@ function _renderScreen(state) {
   const panel = state.panel;
   if (panel.kind === 'pick') {
     if (panel.breadcrumb) out(`  ${c.gray(panel.breadcrumb)}`);
-    out(`  ${c.bold(panel.title)} ${c.dim('(↑↓ 切换, ←→ 切主菜单, 1-9 直选, Enter 确认, q 退出)')}`);
+    out(`  ${c.bold(panel.title)} ${c.dim('(↑↓ 切换, ←→ 切主菜单, 1-9 直选, Enter 确认, Esc 返回/主菜单退出, q 退出)')}`);
     out('');
     out(_renderSubRow(panel.options, state.subIdx, focus === 'sub'));
   } else if (panel.kind === 'message') {
@@ -1087,7 +1087,7 @@ function _renderScreen(state) {
 
   out('');
   out(c.dim('  ─────────────────────────────────────────────'));
-  out(c.dim('  ↑↓/←→ 移动, Enter 确认, 1-9 直选, q 退出, b 返回'));
+  out(c.dim('  ↑↓/←→ 移动, Enter 确认, 1-9 直选, Esc 返回(主菜单则退出), q 退出'));
 }
 
 // 业务回调：每个主项对应一个"入口面板"
@@ -1446,6 +1446,31 @@ async function showCurrentEnv() {
   return 'continue';
 }
 
+// Esc 返回上一层（子菜单）/ 退出（主菜单）的共享逻辑
+// 清 review 流程临时态 + 出栈一帧；入口面板再按 Esc 则回主菜单行
+// 与 message 面板"任意键出栈"语义对齐（line ~1653），保证 Esc 与任意键行为一致
+function _escBackOneLevel(state) {
+  // 清临时态，避免残留 _tuiEnv / _tuiKeyInput 等影响下次进入
+  state._tuiEnv = null; state._tuiUpdated = null; state._tuiEnvKey = null;
+  state._tuiFriendly = null; state._tuiSyncFn = null; state._tuiCbId = null;
+  state._tuiPickKind = null; state._tuiKeyConfirm = false; state._tuiKeyInput = false;
+  state._inputBuf = '';
+  if (state.panelStack.length > 0) {
+    state.panel = state.panelStack.pop();
+    if (state.panel._topEntry) {
+      // 回到入口面板 → 重生成（刷新 isSet 等状态，与 message 出栈语义对齐）
+      state.panel = _getEntryPanel(state.mainIdx);
+      state._context = TOP_MENU[state.mainIdx].id;
+    }
+    state.subIdx = (state.panel.kind === 'pick' ? (state.panel.defaultIdx ?? 0) : 0);
+    state.focus = 'sub';
+  } else {
+    // 已在入口面板 → 返回主菜单行
+    state.focus = 'main';
+  }
+  state._render();
+}
+
 async function main() {
   // 一次性 header（非 TTY 模式直接走原简单循环）
   if (!IS_TTY) {
@@ -1499,9 +1524,25 @@ async function main() {
   while (running) {
     const k = _parseKey(await _readKeypress());
     if (k === 'ctrl-c') { running = false; break; }
+    // Esc：主菜单（focus=main）退出应用；子菜单任意层级返回上一层；
+    // confirm 面板中等价选 n（用户明确要求）
+    if (k === 'esc') {
+      if (state.focus === 'main') { running = false; break; }
+      if (state.panel.kind === 'confirm') {
+        if (state._tuiKeyConfirm) {
+          state._tuiKeyConfirm = false;
+          _tuiFinalizeReview(state);
+        } else {
+          _escBackOneLevel(state);
+        }
+        continue;
+      }
+      _escBackOneLevel(state);
+      continue;
+    }
     // 全局 q/e 退出：仅在 pick/message 面板时；input/confirm 面板由分支自己处理
     if ((state.panel.kind === 'pick' || state.panel.kind === 'message')
-        && (k === 'q' || k === 'Q' || k === 'e' || k === 'E' || k === 'esc')) {
+        && (k === 'q' || k === 'Q' || k === 'e' || k === 'E')) {
       running = false; break;
     }
 
@@ -1558,7 +1599,7 @@ async function main() {
         state._render();
         continue;
       }
-      if (k === 'ctrl-c' || k === 'q' || k === 'Q' || k === 'esc') { running = false; break; }
+      if (k === 'ctrl-c' || k === 'q' || k === 'Q') { running = false; break; }
       if (k.length === 1 && k >= ' ' && k <= '~') {
         // 字符模式下不重画全屏（避免 stdout 写阻塞导致后续 stdin onData 延迟）
         // 直接更新光标行。接受所有可打印 ASCII（含 : $ 等 API key 常见字符）；
