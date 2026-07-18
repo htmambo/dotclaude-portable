@@ -2,6 +2,8 @@
 
 ## 活跃任务 (Active)
 ## 已完成任务 (Archive)
+### 2026-07
+- ✅ [循环审核协议实施](Archive/2026-07/REVIEW_LOOP_PROTOCOL_PLAN.md) - 完成于 2026-07-19
 ### 2026-06
 - ✅ [主供应商预设三 commit 外部审核落地 (userinfo 凭据泄漏 + ANSI 注入修复)](Archive/2026-06/PRESET_REVIEW_HARDEN_PLAN.md) - 完成于 2026-06-27
 - ✅ [README 写入「主供应商预设」使用说明](Archive/2026-06/README_PRESET_USAGE_PLAN.md) - 完成于 2026-06-27

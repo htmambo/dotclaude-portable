@@ -163,7 +163,7 @@ verdict 与 diff 追加到 `docs/Task/Active/<TASK>_PLAN.md` 对应 `## 外部�
 - 详细协议与软上限见本节 §4.a / §4.b / §4.c
 - PROMPT 模板：见本节 §4.a "PROMPT 模板" 段
 - verdict 写回 `.omc/plans/fullauto-<slug>-impl.md` 的 `## Runtime Decisions` 段
-- 死循环防护：同一文件连续 3 次 REJECTED → 写 `qa-blocker.md`，触发 stop
+- 死循环防护：同一文件连续 5 次 REJECTED → 写 `qa-blocker.md`，触发 stop（受 global/CLAUDE.md §1.5 全局 5 轮上限约束；per-file 5 次与 timing 5 轮任一先达即 stop）
 - 串行化：Runtime Decisions 写入由 main fullauto 助手**亲自执行**，不交给子代理（避免并发写竞争）
 </Review_Advisor>
 
@@ -359,14 +359,14 @@ Params:
   - REJECTED → 写 `## 外部审核复审 REJECTED` 段 + diff 写回 `.omc/plans/fullauto-<slug>-impl.md` 的 `## Runtime Decisions` 段；下一文件执行前**必须 Read** 该段
   - 失败 → 写 `## 外部审核：未参与` 段，主流程不挂
 - **不阻塞**（与 §4 一致）：REJECTED 不阻断主流程，但 plan 留下印记，下一文件必须 Read
-- **死循环防护**：同一文件连续 3 次 REJECTED → 写 `.omc/fullauto/<slug>/qa-blocker.md`，触发 stop condition
+- **死循环防护**：同一文件连续 5 次 REJECTED → 写 `.omc/fullauto/<slug>/qa-blocker.md`，触发 stop condition
 
 #### §4.b v2.2 — 软上限与批量聚合
 
 | 维度 | 上限 | 超限处理 |
 |---|---|---|
 | 单 phase 内 runReview 调用次数 | ≤ 8 | 后续文件走"批量聚合 prompt"模式（多个 BEFORE/AFTER 拼一段） |
-| 同一文件连续 REJECTED | ≤ 3 | 写 `qa-blocker.md`，stop |
+| 同一文件连续 REJECTED | ≤ 5 | 写 `qa-blocker.md`，stop（§1.5 全局 5 轮） |
 | 嵌入 prompt 体积 | ≤ 30k token | 已实测 210 字节 + 上下文远低于 30k；超出时把 BEFORE/AFTER 改为文件路径 + 行号引用 |
 
 **批量聚合下的 REJECTED 计数**：批量 prompt 内 N 个文件任一 REJECTED，phase 总数 +N；但 `qa-blocker` 仍按 §4.a 单文件连续 REJECTED 次数计，不与批量聚合叠加。
@@ -442,7 +442,7 @@ handwritten — <executor/debugger/direct-fix>
 - REJECTED → 写 `## 外部审核复审 REJECTED` + 采纳 diff 修复或记录理由后再继续
 - 失败 → 写 `## 外部审核：未参与（原因：...）`，主流程不挂
 
-**死循环防护**：同一文件连续 3 次 REJECTED → 抛错并请求用户决策（手工模式不自动 stop，因无 qa-blocker 机制；用户决定继续还是回滚）。REJECTED 计数器按 (文件路径, 会话ID) 隔离，手工模式与 fullauto 模式的计数器互不干扰，但同一文件在手工模式下的连续 REJECTED 累计至 3 次仍触发阻断。
+**死循环防护**：同一文件连续 5 次 REJECTED → 抛错并请求用户决策（手工模式不自动 stop，因无 qa-blocker 机制；用户决定继续还是回滚）。REJECTED 计数器按 (文件路径, 会话ID) 隔离，手工模式与 fullauto 模式的计数器互不干扰，但同一文件在手工模式下的连续 REJECTED 累计至 5 次仍触发阻断（受 global/CLAUDE.md §1.5 全局 5 轮上限约束）。
 
 **软上限**：单次会话内 `runReview(kind=code)` ≤ 8 次；超出走批量聚合。批量聚合不与 §4.a 单文件 REJECTED 计数叠加（因跨流程）。
 
@@ -620,7 +620,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
    - executor 改完 1 个文件 → main 助手 Read 该文件 BEFORE+AFTER
    - 嵌入 PROMPT 调 `runReview({kind:"code"})`（provider 默认 coding-bridge，模板见本节 §4.a）
    - verdict 写回 `.omc/plans/fullauto-<slug>-impl.md` 的 `## Runtime Decisions` 段（main 助手亲自写，不交子代理）
-   - 同一文件连续 3 次 REJECTED → 写 `qa-blocker.md`，触发 stop
+   - 同一文件连续 5 次 REJECTED → 写 `qa-blocker.md`，触发 stop
    - 软上限：单 phase ≤ 8 次 runReview 调
    - 详见本节 §4.a / §4.b / §4.c
 
@@ -647,7 +647,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
    - **v2.2 单文件外部审核复审**（debugger 改完 1 个文件后）：
      - main 助手 Read 该文件 BEFORE+AFTER，嵌入 PROMPT 调 `runReview({kind:"code"})`（provider 默认 coding-bridge）
      - verdict 写回 `.omc/plans/fullauto-<slug>-impl.md` 的 `## Runtime Decisions` 段
-     - 同一文件连续 3 次 REJECTED → 写 `qa-blocker.md`，触发 stop
+     - 同一文件连续 5 次 REJECTED → 写 `qa-blocker.md`，触发 stop
    - Re-run the failing check
    - **Never ask the user** — pick fixes and apply them
 
@@ -679,7 +679,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
    - **v2.2 单文件外部审核复审**（executor 修完 1 个文件后）：
      - main 助手 Read 该文件 BEFORE+AFTER，嵌入 PROMPT 调 `runReview({kind:"code"})`（provider 默认 coding-bridge）
      - verdict 写回 `.omc/plans/fullauto-<slug>-impl.md` 的 `## Runtime Decisions` 段
-     - 同一文件连续 3 次 REJECTED → 写 `qa-blocker.md`，触发 stop
+     - 同一文件连续 5 次 REJECTED → 写 `qa-blocker.md`，触发 stop
    - Re-run all three reviewers (max 3 rounds)
    - Stay fully autonomous — never ask the user
 

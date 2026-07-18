@@ -367,6 +367,39 @@ Return value:
 4. ✅ Main flow continues; PLAN.md writes "## External Review Opinion: APPROVED (provider=kimi)"
 ```
 
+### 1.5 Review Loop Protocol (verdict-driven fix-re-review)
+
+**Core principle: a review is closed only by `verdict == APPROVED`, not by a single call.** §1.4 governs tool-unreachable retries (switch provider); this section governs verdict-not-pass retries (fix and re-review). The two are orthogonal - a NOT_APPROVED verdict is never retried by switching provider, and an UNREACHABLE tool is never "fixed" by editing code.
+
+**Pass criterion & verdict vocabulary**:
+
+- `APPROVED` (with or without minor `suggestions`) = pass. Suggestions are recorded in PLAN.md but do not block.
+- `REJECTED` or `NEEDS_CHANGES` = NOT_APPROVED. The provider MUST list `risks[]`; the main assistant MUST address every risk, then re-invoke the same-`kind` review.
+- `UNKNOWN` (verdict unparseable from tool_result) = treated as NOT_APPROVED (fail-closed).
+
+**Loop upper bound**: `REVIEW_MAX_ROUNDS=5` (env overridable). Each round's verdict is written to PLAN.md `## External Review Opinion` section as `Round N/5`. The main assistant is the single writer of the round counter; hooks are read-only observers and MUST NOT increment it. Counters reset when the timing closes (APPROVED or exhaustion). On exhaustion, the report MUST state which cap triggered (timing 5-round vs per-file 5× breaker) so the user can distinguish a single-file deadlock from a global timing timeout.
+
+**Exhaustion handling** (round 5 still NOT_APPROVED):
+
+- MUST stop and surface residual `risks[]` to the user; the current task queue is paused pending user intervention.
+- This stop is classified as a `hard max iterations` legitimate stop condition under the fullauto `Autonomy_Directive` (NOT an interactive prompt - it is a terminal stop, not a clarification request).
+- Forbidden: silently downgrading to "best-effort" close-out, dropping the loop early, or concealing residual risks.
+
+**Applicable timings** (see auto-invocation table in the spec header):
+
+- Code-kind timings (#4 single-file fix, #5 Phase 4 validation) loop by default.
+- Plan-kind timings (#1 requirement, #2 plan, #3-pre / #3 / #5 Phase 0 / 1 / 4) default to 1 round; append a round only on REJECTED / NEEDS_CHANGES.
+
+**Verdict extraction contract** (parser-authoritative; real samples under `docs/samples/`):
+
+1. Parse `tool_result.content[0].text` as JSON -> `result.agent_messages`.
+2. Extract verdict in order: (a) ` ```json ` fence JSON `verdict` field (kimi form); (b) multi-level markdown LAST-match (coding-bridge form - each level takes the LAST occurrence to avoid false-hit on verdict words quoted in preamble): bold `**VERDICT**` > title `审查结论: VERDICT` / `Verdict: VERDICT` > bare word `APPROVED|REJECTED|NEEDS_CHANGES`.
+3. Unparseable -> `UNKNOWN` -> NOT_APPROVED (fail-closed).
+
+**Override declaration**: this protocol takes precedence over the `REJECTED does not block main flow` default in `~/.claude/skills/fullauto/SKILL.md` `Review_Advisor`. The SKILL.md `same-file 3× REJECTED -> qa-blocker stop` guard is superseded by this 5-round cap (counted at the review-timing scope, not per-file).
+
+**Scope-matching degradation** (watchdog): when the review's file scope cannot be reliably extracted from the tool call, degrade to fail-closed - any unresolved NOT_APPROVED in the current session warns on any Write/Edit of a code file.
+
 <!-- OMC:IMPORT:START -->
 
 @CLAUDE-omc.md
