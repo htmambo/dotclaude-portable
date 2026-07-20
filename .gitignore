@@ -41,3 +41,4 @@ backups/
 .env
 .env.*
 !.env.example
+.ace-tool/
