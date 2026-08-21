@@ -119,7 +119,7 @@ extract_last_verdict() {
   python3 - "$transcript" <<'PY'
 import json, sys, re
 path = sys.argv[1]
-REVIEW = {"mcp__coding-bridge__review_code","mcp__coding-bridge__review_plan","mcp__kimi__kimi","mcp__codex__codex"}
+REVIEW = {"mcp__coding-bridge__review_code","mcp__coding-bridge__review_plan","mcp__codex__codex"}
 use_ids = {}
 try:
     with open(path) as f:
@@ -163,7 +163,7 @@ try:
                     if not am:
                         last = "UNKNOWN"; continue
                     v = None
-                    # (a) ```json fence verdict 字段(kimi 形态)
+                    # (a) ```json fence verdict 字段(codex 形态)
                     m = re.search(r"```json\s*([\s\S]*?)```", am)
                     if m:
                         try:

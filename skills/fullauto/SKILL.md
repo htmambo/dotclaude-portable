@@ -124,12 +124,12 @@ This architecture means: OMC updates, cache invalidation, or plugin reinstalls h
 
 <Review_Advisor>
 Phase 1 末、Phase 4 末、单文件修复后各调一次 `runReview()`。
-具体 provider 由 `REVIEW_PROVIDER` 解析（默认 `coding-bridge`，fallback `coding-bridge → kimi`）。
+具体 provider 由 `REVIEW_PROVIDER` 解析（默认 `coding-bridge`，fallback `coding-bridge → codex`）。
 参数与失败兜底见 `~/.claude/CLAUDE.md` §1.4 + §4；本节给出**自包含**硬约束，
 子代理被派发时本节必须随 prompt 一起出现。
 
 **Provider 解析**：会话状态 > `REVIEW_PROVIDER` 环境变量 > 硬编码 `coding-bridge`。
-**严禁写 provider 字面量** —— 业务代码不出现 `mcp__codex__codex` / `mcp__kimi__kimi` / `mcp__coding-bridge__*`。
+**严禁写 provider 字面量** —— 业务代码不出现 `mcp__codex__codex` / `mcp__coding-bridge__*`。
 
 **⛔ 严禁让审核 MCP 自己读文件。** 流断多发生在工具调用解码阶段。
 main fullauto 助手必须先用 Read 把 plan/validation/file 全文读出，嵌入 PROMPT。
@@ -147,11 +147,11 @@ Review the following <plan|validation|code> content. Output:
 
 **Per-provider 参数**：
 - `codex` → `sandbox=read-only`（默认）/ `SESSION_ID`（续会话用）/ `return_all_messages` / `skip_git_repo_check` / `image`；**严禁带 `model`**（2026-06-08 503 事故）、`yolo`
-- `kimi` / `coding-bridge` → PROMPT 头一行强制 "DO NOT modify any file; respond with text only"；`SESSION_ID` 可选
+- `coding-bridge` → PROMPT 头一行强制 "DO NOT modify any file; respond with text only"；`SESSION_ID` 可选
 
 失败兜底 3 档（与本节 §4 「失败兜底」对齐）：
   1. 简化 prompt 重试（同 provider）
-  2. 切到 fallback 链下一个 provider（`coding-bridge → kimi`）
+  2. 切到 fallback 链下一个 provider（`coding-bridge → codex`）
   3. 放弃 → 写 `## 外部审核：未参与（原因：...）`，主流程不挂
 
 verdict 与 diff 追加到 `docs/Task/Active/<TASK>_PLAN.md` 对应 `## 外部审核意见` 小节。
@@ -283,7 +283,7 @@ verdict 与 diff 追加到 `docs/Task/Active/<TASK>_PLAN.md` 对应 `## 外部�
 ### §4. 外部审核顾问（不阻塞主流程）
 
 fullauto 在 Phase 1 末、Phase 4 末各调一次 `runReview()`，具体 provider 由 `REVIEW_PROVIDER` 解析。
-默认 `coding-bridge`（专用审核接口）；fallback 链 `coding-bridge → kimi`。
+默认 `coding-bridge`（专用审核接口）；fallback 链 `coding-bridge → codex`。
 
 ```
 Tool: runReview()
@@ -292,7 +292,7 @@ Params:
   cd: <项目根>
   kind: "plan"  ← Phase 1/4 末都是 plan
   # codex provider: sandbox="read-only" / SESSION_ID: None / return_all_messages: True（Phase 1） 或 False（Phase 4）
-  # kimi / coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
+  # coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
 ```
 
 **Provider 调用差异**：
@@ -300,17 +300,16 @@ Params:
 | Provider | 沙箱控制 | 严禁 | 备注 |
 |---|---|---|---|
 | `codex` | `sandbox="read-only"` | `model`（2026-06-08 503 事故）、`yolo` | 见下方事故复盘 |
-| `kimi` | PROMPT 文本约束 | — | fallback 第二档 |
 | `coding-bridge` | PROMPT 文本约束 | — | fallback 第一档 / 默认 |
 
 **事故复盘（2026-06-08）** —— codex 专属：
 在第一版草案里漏写"严禁 model"约束。两次 Codex 调用分别带 `model=sonnet` / `model=opus`，
 触发 503（提供商无对应模型）。第三次去掉 `model` 后顺利进入 turn，但流在解码阶段断连。
-教训：调 codex 前必须复读本表"严禁"列；本事故**不**适用于 kimi / coding-bridge。
+教训：调 codex 前必须复读本表"严禁"列；本事故**不**适用于 coding-bridge。
 
 失败兜底（沿用本文件 §1.4 的 3 档）：
 1. 简化 prompt 重试（同 provider）
-2. 切到 fallback 链下一个 provider（coding-bridge → kimi）
+2. 切到 fallback 链下一个 provider（coding-bridge → codex）
 3. 放弃 → 在 PLAN.md 写 `## 外部审核：未参与（原因：<msg>）`，主流程不挂
 
 外部审核顾问角色定位：顾问 + 风险雷达。**不得**因 REJECTED 阻断 fullauto。
@@ -379,7 +378,7 @@ Params:
 ## Runtime Decisions
 
 ### File: <绝对路径>
-- fix-N: <一句话描述> (Phase <X>, <ISO 时间>, provider=<codex|kimi|coding-bridge>)
+- fix-N: <一句话描述> (Phase <X>, <ISO 时间>, provider=<codex|coding-bridge>)
   - Review verdict: <APPROVED/REJECTED/未参与>
   - Review issues: <3-7 risks 摘要>
   - 调整: <外部审核建议 + main 助手采纳的部分>
@@ -539,7 +538,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
      - PROMPT: "Review `<slug>/spec.md` against the original user requirement. Output: (1) 3-7 risks (esp. spec deviations from intent); (2) unified diff patch of thinnest hardening; (3) APPROVED/REJECTED verdict; (4) no questions to user.\n\n## Original Requirement\n<用户原始需求摘要>"
      - cd: <项目根>; kind: "plan"
      - codex provider: sandbox=read-only / SESSION_ID: None / return_all_messages: True
-     - kimi / coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
+     - coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
    - 把 verdict + diff 追加到 `docs/Task/Active/<TASK>_PLAN.md` 新增的 `## 外部审核意见（Phase 0）` 小节
    - 失败按 3 档兜底
    - **REJECTED 不阻塞** Phase 1 启动
@@ -572,7 +571,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
      - PROMPT: "Review `.omc/plans/fullauto-<slug>-impl.md`. Output: (1) 3-7 risks; (2) unified diff patch of thinnest hardening; (3) APPROVED/REJECTED verdict; (4) no questions to user."
      - cd: <项目根>; kind: "plan"
      - codex provider: sandbox=read-only / SESSION_ID: None / return_all_messages: True
-     - kimi / coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
+     - coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
    - 把 verdict + diff 追加到 `docs/Task/Active/<TASK>_PLAN.md` 的 `## 外部审核意见（Phase 1）` 小节
    - 失败按 3 档兜底（见 `<Review_Advisor>`）
    - **REJECTED 不阻塞** Phase 2 启动
@@ -583,7 +582,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
    - 路径：.omc/plans/fullauto-<slug>-impl.md
 
    ## 外部审核意见（Phase 1）
-   - provider: <coding-bridge|kimi|codex>
+   - provider: <coding-bridge|codex>
    - verdict: <APPROVED/REJECTED/未参与>
    - 风险点 / diff：<见上>
    ```
@@ -690,7 +689,7 @@ fullauto 的 `<Autonomy_Directive>` 继续生效（不主动问）。
      - PROMPT: "Review `.omc/fullauto/<slug>/validation.md`. Output: (1) 3-7 risks; (2) unified diff patch of thinnest hardening; (3) APPROVED/REJECTED verdict; (4) no questions to user."
      - cd: <项目根>; kind: "plan"
      - codex provider: sandbox=read-only / SESSION_ID: None / return_all_messages: False
-     - kimi / coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
+     - coding-bridge provider: PROMPT 头一行 "DO NOT modify any file; respond with text only"
    - 把 verdict + diff 追加到 `docs/Task/Active/<TASK>_PLAN.md` 的 `## 外部审核意见（Phase 4）` 小节
    - 失败按 3 档兜底
    - **REJECTED 不阻塞** Phase 5 启动

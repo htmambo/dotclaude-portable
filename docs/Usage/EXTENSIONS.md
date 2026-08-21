@@ -317,7 +317,7 @@ mcp__context7__query-docs({context7CompatibleLibraryID: "/fastapi/fastapi", topi
 
 ### 4.5 `coding-bridge` —— External Review MCP(必装)
 
-对应 `global/CLAUDE.md` 的 `runReview()` 抽象层(`codex` / `kimi` / `coding-bridge` 三 provider 中的 `coding-bridge` 实现)。
+对应 `global/CLAUDE.md` 的 `runReview()` 抽象层(`codex` / `coding-bridge` 两 provider 中的 `coding-bridge` 实现)。
 
 **触发方式**:
 - Claude Code 会话内 `runReview({kind: "code", ...})` → `mcp__coding-bridge__review_code`

@@ -73,7 +73,7 @@ cd dotclaude-portable
 
 ## coding-bridge MCP（External Review）
 
-`global/CLAUDE.md` 强制所有改动需经 `runReview()` 走外部 review MCP（codex / kimi / coding-bridge）。`coding-bridge` 是 GitHub 源 MCP（**Python 项目**，启动需 `uvx`）：
+`global/CLAUDE.md` 强制所有改动需经 `runReview()` 走外部 review MCP（codex / coding-bridge）。`coding-bridge` 是 GitHub 源 MCP（**Python 项目**，启动需 `uvx`）：
 
 ### 一次性配置
 
@@ -132,7 +132,7 @@ source ~/.zshrc
 
 不想记子命令？直接跑 `./tools/configure.mjs` —— 菜单驱动：
 
-1. **外部 Review 供应商**（coding-bridge / kimi / codex 切换 + API key → 仓库根 `.env`）
+1. **外部 Review 供应商**（coding-bridge / codex 切换 + API key → 仓库根 `.env`）
 2. **Claude Code 主供应商预设**（minimax / anyrouter / selfminimax / xunfei / default）
 3. **Statusline / HUD**（ccstatusline-zh / omc-hud）
 4. **辅助子模块状态**（只读：memory MCP / pre-push / pre-sync-docs）

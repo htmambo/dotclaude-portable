@@ -28,7 +28,7 @@ settings.local.json      ← 机器局部   → ❌ 永不入库
 default.json             ← 含 sk-...  → ❌ 永不入库
 providers.json           ← 含 sk-ant-... → ❌ 永不入库
 .omc-config.json         ← 含 telegram bot token + nvm 路径 → ❌ 永不入库
-kimi.json / minimax.json / selfminimax.json / baidu.json / anyrouter.json
+minimax.json / selfminimax.json / baidu.json / anyrouter.json
                          ← secret    → ❌ 永不入库
 mcp-needs-auth-cache.json ← 鉴权缓存  → ❌ 永不入库
 ```

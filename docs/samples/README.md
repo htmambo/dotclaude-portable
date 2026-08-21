@@ -17,7 +17,7 @@
 
 1. 解析 `tool_result_content[0].text` 为 JSON -> `result.agent_messages`。
 2. verdict 提取顺序：
-   - (a) ``` ```json ``` fence 内 JSON 的 `verdict` 字段（kimi 形态）。
+   - (a) ``` ```json ``` fence 内 JSON 的 `verdict` 字段（codex 形态）。
    - (b) 正则匹配 `APPROVED|REJECTED|NEEDS_CHANGES`（coding-bridge 形态，NEEDS_CHANGES 视为 NOT_APPROVED）。
 3. 无法解析 -> `UNKNOWN` -> 视为 NOT_APPROVED（fail-closed）。
 

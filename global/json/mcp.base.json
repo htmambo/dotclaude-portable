@@ -25,10 +25,6 @@
         "SPARK_API_KEY": "${SPARK_API_KEY}",
         "ARK_API_KEY": "${ARK_API_KEY}"
       }
-    },
-    "kimi": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/htmambo/kimimcp.git", "kimimcp"]
     }
   }
 }

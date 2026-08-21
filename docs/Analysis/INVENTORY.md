@@ -63,7 +63,6 @@
 | `default.json` | `sk-***REDACTED-anthropic-40chars***` + nvm 路径 | ❌ 永不入库 |
 | `providers.json` | `sk-ant-***REDACTED-anthropic-72chars***` | ❌ 永不入库 |
 | `.omc-config.json` | telegram bot token `***REDACTED-telegram***` + nvm 路径 | ❌ 永不入库 |
-| `kimi.json` | API key | ❌ |
 | `minimax.json` / `selfminimax.json` | secret | ❌ |
 | `baidu.json` / `anyrouter.json` | 可能含 token | ❌ |
 | `mcp-needs-auth-cache.json` | 鉴权缓存 | ❌ |

@@ -208,14 +208,14 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 | `hooks/guard-read-size.mjs` | `hooks/guard-read-size.mjs` | symlink（PreToolUse:Read — 超 2MB 媒体/5MB 文本自动 deny，避免撑爆 32MB 请求体） |
 | `hooks/warn-context.mjs` | `hooks/warn-context.mjs` | symlink（UserPromptSubmit — transcript 24/28/30 MB 三档预警 systemMessage） |
 
-### 6 个 MCP（`global/json/mcp.base.json`）
+### 5 个 MCP（`global/json/mcp.base.json`）
 
-- `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge` / **`kimi`（fallback）**
-- 前 4 个用 `npx -y <pkg>` 启动；**`coding-bridge` + `kimi` 是 Python 项目**，需先装 `uvx`（`curl -LsSf https://astral.sh/uv/install.sh | sh`）
+- `context7` / `filesystem` / `mcp-deepwiki` / `memory` / `coding-bridge`
+- 前 4 个用 `npx -y <pkg>` 启动；**`coding-bridge` 是 Python 项目**，需先装 `uvx`（`curl -LsSf https://astral.sh/uv/install.sh | sh`）
 - **关键**：Claude Code 真正加载 MCP server 是从 `~/.claude.json` 的 `mcpServers` 字段（不是 `~/.claude/.mcp.json`——后者是 OMC 等工具读的，不被 Claude Code 加载）
-- **CLAUDE.md fallback 链**：`coding-bridge → kimi`（CLAUDE.md §"Hard-coded fallback"）。coding-bridge 失败时 Claude 自动用 `mcp__kimi__kimi` 兜底
-- **必设环境变量**（仅 coding-bridge）：`export CODING_BRIDGE_API_KEY=<your-key>`（写到 `~/.zshrc`）；`kimi` 自动读 `~/.claude/kimi.json` 的 provider 配置
-- 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` + `mcp__kimi__kimi` 加进 `~/.claude/settings.json` 的 `permissions.allow`
+- **CLAUDE.md fallback 链**：`coding-bridge → codex`（CLAUDE.md §"Hard-coded fallback"）。coding-bridge 失败时 Claude 自动用 `mcp__codex__codex` 兜底
+- **必设环境变量**（仅 coding-bridge）：`export CODING_BRIDGE_API_KEY=<your-key>`（写到 `~/.zshrc`）
+- 自动把 `mcp__coding-bridge__review_code` + `mcp__coding-bridge__review_plan` 加进 `~/.claude/settings.json` 的 `permissions.allow`
 - 跨机器只需 `node` + `npx` + `uvx`
 
 ### `ccstatusline-zh`（非 plugin，是 statusLine 命令 + 配置）
@@ -237,7 +237,7 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 - `settings.json` / `settings.self` / `default.json` / `providers.json` — 全部含 `sk-...` 真实 API token
 - `settings.local.json` — 本机临时权限列表
 - `.omc-config.json` — 含 telegram bot token + 本机 nvm 路径
-- `kimi.json` / `minimax.json` / `selfminimax.json` / `baidu.json` / `anyrouter.json` / `mcp-needs-auth-cache.json`
+- `minimax.json` / `selfminimax.json` / `baidu.json` / `anyrouter.json` / `mcp-needs-auth-cache.json`
 - 所有缓存/历史/运行态/插件目录
 
 完整决策表见 `docs/Analysis/INVENTORY.md`。

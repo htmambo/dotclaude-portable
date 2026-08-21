@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // tools/configure.mjs — 交互式统一配置向导（v1.0.0）
 // 管理范围：
-//   1. 外部 Review 供应商：coding-bridge / kimi / codex（切换默认 + API key 写入仓库根 .env）
+//   1. 外部 Review 供应商：coding-bridge / codex（切换默认 + API key 写入仓库根 .env）
 //   2. Claude Code 主供应商预设：minimax / anyrouter / selfminimax / xunfei / default
 //   4. 辅助子模块：memory MCP / pre-push hook / pre-sync-docs hook
 //
@@ -17,7 +17,7 @@
 //
 // 持久化约定：
 //   仓库根 .env   — REVIEW_PROVIDER / CODING_BRIDGE_PROVIDER / CODING_BRIDGE_API_KEY（+ 各 provider 专属 KEY 候选）
-//   ~/.claude.json.mcpServers               — 同步 coding-bridge + kimi + codex 段
+//   ~/.claude.json.mcpServers               — 同步 coding-bridge + codex 段
 //   ~/.claude/settings.json.permissions.allow — 同步 review tools allow（含 mcp__codex__codex）
 'use strict';
 
@@ -449,21 +449,20 @@ async function confirm(question, defaultYes = false) {
 
 // ─── 业务：Review 供应商配置 ───────────────────────────
 // 外部 Review 供应商：扁平化 3 个独立 action
-// 1) 默认后端 → REVIEW_PROVIDER (coding-bridge / kimi / codex)（CLAUDE.md §"Provider resolution"）
+// 1) 默认后端 → REVIEW_PROVIDER (coding-bridge / codex)（CLAUDE.md §"Provider resolution"）
 // 2) CB 供应商 → CODING_BRIDGE_PROVIDER (上游 8 个 provider，见 CB_PROVIDERS)
 // 3) CB API KEY → CODING_BRIDGE_API_KEY（通用入口；上游推荐只设这一个）
 // 上游 coding-bridge-mcp 按 provider 的 api_key_env_vars 链优先级匹配 key：
 //   API_KEY → <provider 专属 KEY>（详见 mcp/coding-bridge/.../providers.py）
 const REVIEW_ACTIONS = [
-  { id: 'provider',    label: '默认后端',    envKey: 'REVIEW_PROVIDER',         friendly: '默认 Review 后端（coding-bridge/kimi/codex）', isProvider: true },
+  { id: 'provider',    label: '默认后端',    envKey: 'REVIEW_PROVIDER',         friendly: '默认 Review 后端（coding-bridge/codex）', isProvider: true },
   { id: 'cb-backend',  label: 'CB 供应商',   envKey: 'CODING_BRIDGE_PROVIDER',   friendly: 'coding-bridge 后端', isCb: true },
   { id: 'cb-key',      label: 'CB API KEY',  envKey: 'CODING_BRIDGE_API_KEY',    friendly: 'coding-bridge 通用 API KEY' },
 ];
 
-// REVIEW_PROVIDER 取值（CLAUDE.md：codex | kimi | coding-bridge）
+// REVIEW_PROVIDER 取值（CLAUDE.md：codex | coding-bridge）
 const REVIEW_PROVIDERS = [
   { id: 'coding-bridge', label: 'coding-bridge', description: '专用 review 接口（默认）' },
-  { id: 'kimi',          label: 'kimi',          description: '通用 chat 兜底' },
   { id: 'codex',         label: 'codex',         description: 'Codex CLI 包装（sandbox=read-only）' },
 ];
 
@@ -553,7 +552,7 @@ async function configureReviewProvider() {
   const env = loadEnv();
   const updated = new Set();
   if (action.isProvider) {
-    // 选默认 Review 后端：REVIEW_PROVIDER (coding-bridge / kimi / codex)
+    // 选默认 Review 后端：REVIEW_PROVIDER (coding-bridge / codex)
     const cur = readEnvKey(action.envKey) || 'coding-bridge';
     const rpSel = await choose('默认 Review 后端', REVIEW_PROVIDERS,
       { default: REVIEW_PROVIDERS.findIndex(p => p.id === cur) }
@@ -589,7 +588,7 @@ async function configureReviewProvider() {
 // 把 coding-bridge 同步到 ~/.claude.json.mcpServers（写字面值，不破坏其他 server）
 // 设计：与 _applyKeysToClaudeJson 对齐——MCP env 段是字面值，不经 shell 展开，
 // 故必须写已解析的 KEY；占位符 ${...} 会导致鉴权失败。
-// kimi / codex MCP 段由 syncReviewMcpServers 维护；本函数只管 coding-bridge。
+// codex MCP 段由 syncReviewMcpServers 维护；本函数只管 coding-bridge。
 // 数据驱动：provider 与 key 链均来自 CB_PROVIDERS / resolveActiveCbKey，
 // 新增 provider 无需改此处（与上游 providers.py 解耦）。
 async function syncClaudeJsonCodingBridge(cbProvider) {
@@ -637,9 +636,8 @@ async function syncClaudeJsonCodingBridge(cbProvider) {
   ok(`已写入 coding-bridge → ${CLAUDE_JSON}（字面值，provider=${provider}）`);
 }
 
-// 把 kimi / codex MCP 段同步到 ~/.claude.json.mcpServers（与 install.mjs:installCodingBridgeJson 对齐）
-// kimi / codex 不需要 API key（kimi 读 ~/.claude/kimi.json；codex 调本地 codex CLI），
-// 故只需保证 server 条目存在 + 字面值 args 完好；install.mjs 写入后 configure 侧补齐幂等。
+// 把 codex MCP 段同步到 ~/.claude.json.mcpServers（与 install.mjs:installCodingBridgeJson 对齐）
+// codex 不需要 API key（调本地 codex CLI），故只需保证 server 条目存在 + 字面值 args 完好。
 // af62eba 后 codex 成为正式 submodule，但 install.mjs 尚未登记 codex → 这里兜底写入。
 function _ensureReviewMcpServer(cfg, name, args) {
   cfg.mcpServers = cfg.mcpServers || {};
@@ -659,28 +657,25 @@ function _ensureReviewMcpServer(cfg, name, args) {
 async function syncReviewMcpServers() {
   const cfg = readJSON(CLAUDE_JSON) || {};
   let changed = false;
-  // kimi：CLAUDE.md fallback 链成员
-  if (_ensureReviewMcpServer(cfg, 'kimi', ['--from', 'git+https://github.com/htmambo/kimimcp.git', 'kimimcp'])) changed = true;
   // codex：af62eba 新增的审查 submodule，install.mjs 未登记，configure 侧补齐
   if (_ensureReviewMcpServer(cfg, 'codex', ['--from', 'git+https://github.com/htmambo/codexmcp.git', 'codexmcp'])) changed = true;
   if (!changed) {
-    info(`kimi + codex MCP 段已就位于 ${CLAUDE_JSON}`);
+    info(`codex MCP 段已就位于 ${CLAUDE_JSON}`);
     return;
   }
   backupOnce(CLAUDE_JSON);
   atomicWriteJSON(CLAUDE_JSON, cfg);
-  ok(`已同步 kimi + codex MCP 段 → ${CLAUDE_JSON}`);
+  ok(`已同步 codex MCP 段 → ${CLAUDE_JSON}`);
 }
 async function syncSettingsAllow() {
   const settings = readJSON(SETTINGS_JSON) || {};
   settings.permissions = settings.permissions || {};
   settings.permissions.allow = settings.permissions.allow || [];
-  // 三家外部 Review MCP 的 tool allow：codex 在 af62eba 后成为正式 submodule，
+  // 两家外部 Review MCP 的 tool allow：codex 在 af62eba 后成为正式 submodule，
   // mcp__codex__codex 须一并 allow，否则切换 REVIEW_PROVIDER=codex 时调用被拦
   const needed = [
     'mcp__coding-bridge__review_code',
     'mcp__coding-bridge__review_plan',
-    'mcp__kimi__kimi',
     'mcp__codex__codex',
   ];
   const missing = needed.filter(t => !settings.permissions.allow.includes(t));
@@ -870,7 +865,7 @@ function _detectClaudeCode() {
 }
 function _applyKeysToClaudeJson(dotenv, dryRun) {
   // 把 .env 里的 KEY 字面值写入 ~/.claude.json.mcpServers.coding-bridge.env
-  // 保留原有 mcpServers 其它段（kimi / codex 等）
+  // 保留原有 mcpServers 其它段（codex 等）
   // 数据驱动：provider 与 key 链来自 CB_PROVIDERS（与上游 providers.py 对齐）
   const cfg = readJSON(CLAUDE_JSON) || {};
   cfg.mcpServers = cfg.mcpServers || {};
@@ -1140,7 +1135,7 @@ function _tuiReviewRun(state) {
   state._tuiEnv = env0;
   state._tuiUpdated = new Set();
   if (action.isProvider) {
-    // 选默认 Review 后端：REVIEW_PROVIDER (coding-bridge / kimi / codex)
+    // 选默认 Review 后端：REVIEW_PROVIDER (coding-bridge / codex)
     const cur = readEnvKey(action.envKey) || 'coding-bridge';
     _panelOps.push(state, {
       kind: 'pick',

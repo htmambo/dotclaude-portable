@@ -15,7 +15,7 @@
 4. **辅助子模块状态**（只读：memory MCP / pre-push / pre-sync-docs）
 5. **查看当前 .env**
 
-> **关于 kimi / codex**：这两个 MCP 各自有**自己的** CLI / 配置文件（kimi 走 `~/.claude/kimi.json`，codex 走 codex MCP 自身配置），**不**归 dotclaude-portable 管。本项目只管 coding-bridge 这一条 review 链（CLAUDE.md §"Hard-coded fallback" 默认主供应商）；kimi / codex 的 API key 请到各自工具的配置里填。
+> **关于 codex**：codex MCP 有自己的 CLI / 配置文件（codex 走 codex MCP 自身配置），**不**归 dotclaude-portable 管。本项目只管 coding-bridge 这一条 review 链（CLAUDE.md §"Hard-coded fallback" 默认主供应商）；codex 的 API key 请到其自身工具的配置里填。
 
 ## Claude Code 主供应商预设（菜单 2）做什么用？
 
@@ -103,8 +103,8 @@ myproxy.json — test.example.com
 
 | 文件 | 写什么 | 谁读 |
 |---|---|---|
-| `<repo>/.env` | `REVIEW_PROVIDER` / `CODING_BRIDGE_PROVIDER` / `CODING_BRIDGE_API_KEY` / `KIMI_API_KEY` / `CODEX_API_KEY` | shell `export $(cat .env | xargs)` 或自写 `direnv` / 启动脚本 |
-| `~/.claude.json` | `mcpServers.coding-bridge` + `mcpServers.kimi` | Claude Code 启动时加载 MCP |
+| `<repo>/.env` | `REVIEW_PROVIDER` / `CODING_BRIDGE_PROVIDER` / `CODING_BRIDGE_API_KEY` / `CODEX_API_KEY` | shell `export $(cat .env | xargs)` 或自写 `direnv` / 启动脚本 |
+| `~/.claude.json` | `mcpServers.coding-bridge` + `mcpServers.codex` | Claude Code 启动时加载 MCP |
 | `~/.claude/settings.json` | `statusLine` / `permissions.allow` | Claude Code 启动时加载 |
 | **不动** | `~/.zshrc` / `~/.bashrc` | —（避免污染 shell rc；用户自己决定加载 `.env` 方式） |
 
@@ -133,7 +133,7 @@ configure.mjs 是个**轻量配置层**。实际安装 / 验证仍走 install.sh
 | configure 看到的状态 | 真要做的事 |
 |---|---|
 | coding-bridge MCP 未配置 | `./install.sh install-coding-bridge-json && ./install.sh install-coding-bridge-mcp` |
-| kimi 未配置 | `./install.sh install-coding-bridge-json`（kimi 顺带装上） |
+| codex MCP 未配置 | `./tools/configure.mjs` 菜单 1（syncReviewMcpServers 兜底写入） |
 | 旧版 npx 命令残留 | `rm ~/.claude/.mcp.json && ./install.sh --force` |
 | pre-push hook 未装 | `./install.sh install-pre-push` |
 | memory MCP 路径异常 | `./install.sh install-memory-mcp` |

@@ -18,6 +18,10 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 
 ### Changed
 
+- **移除 kimi / kimimcp 审查 provider** —— fallback 链改为 `coding-bridge → codex`：
+  - `global/CLAUDE.md` / `skills/fullauto/SKILL.md` / `README.md` / `docs/Usage/*` 同步 fallback 链定义与 provider 表
+  - `tools/install.mjs` / `tools/configure.mjs` / `hooks/*` 移除 kimi 的安装、校验、allow 项与 `KIMI_API_KEY` 引用
+  - `global/json/mcp.base.json` 移除 kimi 段；`.gitmodules` 移除 `mcp/kimi` submodule
 - **外部审查 MCP submodule 化** —— `mcp/codex` / `mcp/coding-bridge` / `mcp/kimi` 三个外部审查 provider 由内嵌改为 git submodule（`af62eba`）
 - **configure.mjs 交互式统一配置向导** —— review 供应商 / 预设 / apply / 子命令统一入口（`0d976bb`），将原零散入口（含上述主供应商预设向导）整合为统一菜单
 - **ccstatusline 配置重排** —— 多行 + thinking-effort + context-bar（`79a35c2`）

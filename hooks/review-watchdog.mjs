@@ -25,7 +25,6 @@ const SKIP_PATH_SUFFIXES = ['.md', '.markdown'];
 const REVIEW_TOOL_NAMES = new Set([
   'mcp__coding-bridge__review_code',
   'mcp__coding-bridge__review_plan',
-  'mcp__kimi__kimi',
   'mcp__codex__codex',
 ]);
 
@@ -109,7 +108,7 @@ function extractVerdict(toolResultContent) {
   }
   if (!agentMessages) return 'UNKNOWN';
 
-  // (a) ```json fence 内 JSON 的 verdict 字段（kimi 形态）
+  // (a) ```json fence 内 JSON 的 verdict 字段（codex 形态）
   const fence = agentMessages.match(/```json\s*([\s\S]*?)```/);
   if (fence) {
     try {

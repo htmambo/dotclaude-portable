@@ -8,26 +8,14 @@
         "color": "cyan"
       },
       {
-        "id": "2",
-        "type": "separator"
-      },
-      {
         "id": "3",
         "type": "thinking-effort",
         "color": "brightBlack"
       },
       {
-        "id": "4",
-        "type": "separator"
-      },
-      {
         "id": "7",
         "type": "output-speed",
         "color": "yellow"
-      },
-      {
-        "id": "e8da43da-5c8a-4ea4-aa80-930806489d9a",
-        "type": "flex-separator"
       },
       {
         "id": "745af7dc-16d6-4f87-a2f4-07be295585b2",
@@ -41,24 +29,12 @@
         "type": "current-working-dir"
       },
       {
-        "id": "7b80a82b-692f-4e81-a270-2df0e512d5a4",
-        "type": "separator"
-      },
-      {
         "id": "198b295f-06e6-4fb8-8d08-aa0d17f962e6",
         "type": "git-branch"
       },
       {
-        "id": "b859074c-9676-4187-8fe0-de0e7add3c44",
-        "type": "separator"
-      },
-      {
         "id": "6f16eb8f-2f08-4f10-9f71-b72feb718c8f",
         "type": "git-changes"
-      },
-      {
-        "id": "b89400fa-b0d2-468a-967f-6d3936f7bb14",
-        "type": "separator"
       },
       {
         "id": "103cbaf7-2493-4b1a-9fdb-095594958394",
@@ -70,6 +46,8 @@
   "flexMode": "full",
   "compactThreshold": 60,
   "colorLevel": 2,
+  "defaultPadding": " ",
+  "defaultPaddingSide": "both",
   "inheritSeparatorColors": false,
   "globalBold": false,
   "gitCacheTtlSeconds": 5,
@@ -84,7 +62,12 @@
     ],
     "startCaps": [],
     "endCaps": [],
+    "theme": "nord-aurora",
     "autoAlign": false,
     "continueThemeAcrossLines": false
+  },
+  "installation": {
+    "method": "pinned",
+    "installedVersion": "2.2.28"
   }
 }
