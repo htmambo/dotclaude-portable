@@ -80,6 +80,137 @@ function renderTemplate(text, env = process.env) {
   });
 }
 
+// ─── LSP server 安装（manifest 驱动） ─────────────────
+// NOTE: 仅 Unix-like 系统（PATH 用 ':' 分隔；依赖 HOME env）。Windows 不在本期范围。
+import { accessSync, constants as fsConstants } from 'node:fs';
+
+// semver "1.2.3" / "v1.2.3" → [1,2,3]；非法返回 null
+function parseSemver(s) {
+  const m = String(s).match(/v?(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return null;
+  const parts = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (parts.some(n => Number.isNaN(n) || n < 0)) return null;
+  return parts;
+}
+// 比较：a<b → -1; a==b → 0; a>b → 1；任一非法 → null
+function compareSemver(a, b) {
+  const pa = parseSemver(a), pb = parseSemver(b);
+  if (!pa || !pb) return null;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1;
+  }
+  return 0;
+}
+// PATH 探测（不开 shell，等价 `command -v`，含 +x 权限检查）
+function commandExists(cmd) {
+  const pathEnv = process.env.PATH ?? '';
+  for (const dir of pathEnv.split(':')) {
+    if (!dir) continue;
+    try { accessSync(join(dir, cmd), fsConstants.X_OK); return true; } catch {}
+  }
+  try { accessSync(join(process.env.HOME ?? '', '.local', 'bin', cmd), fsConstants.X_OK); return true; } catch {}
+  return false;
+}
+// 从版本命令输出提取 semver；返回 null 表示无法探测
+function getVersion(cmd, regexStr) {
+  const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: 10_000 });
+  if (r.error) {
+    if (r.error.code !== 'ENOENT') warn(`[warn] 版本探测异常: ${r.error.message}`);
+    return null;
+  }
+  if (r.signal === 'SIGTERM') {
+    warn(`[warn] 版本探测超时: ${cmd.join(' ')}`);
+    return null;
+  }
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  const m = out.match(new RegExp(regexStr));
+  return m ? m[1] : null;
+}
+function loadLspManifest(repoDir) {
+  const p = join(repoDir, 'global', 'json', 'lsp-servers.base.json');
+  if (!existsSync(p)) fatal(`missing LSP manifest: ${p}`);
+  let m;
+  try { m = JSON.parse(readFileSync(p, 'utf8')); }
+  catch (e) { fatal(`invalid LSP manifest: ${e.message}`); }
+  if (!m.servers || typeof m.servers !== 'object') fatal('LSP manifest: missing "servers" object');
+  return m;
+}
+function installLspServers(ctx) {
+  const manifest = loadLspManifest(ctx.repo);
+  const summary = { installed: [], skipped: [], failed: [] };
+
+  for (const [name, spec] of Object.entries(manifest.servers)) {
+    // spec 基础校验
+    if (!spec || typeof spec !== 'object') {
+      warn(`[skip] ${name}: spec 格式非法`); summary.skipped.push(name); continue;
+    }
+    if (!Array.isArray(spec.versionCheck) || spec.versionCheck.length === 0) {
+      warn(`[skip] ${name}: 缺少 versionCheck 数组`); summary.skipped.push(name); continue;
+    }
+    if (!Array.isArray(spec.command) || spec.command.length === 0) {
+      warn(`[skip] ${name}: 缺少 command 数组`); summary.skipped.push(name); continue;
+    }
+
+    if (spec.prerequisite && !commandExists(spec.prerequisite)) {
+      const url = spec.prerequisiteUrl ? `（${spec.prerequisiteUrl}）` : '';
+      warn(`[skip] ${name}: 需要先装 ${spec.prerequisite}${url}`);
+      summary.skipped.push(name);
+      continue;
+    }
+
+    const cur = getVersion(spec.versionCheck, spec.versionRegex ?? '(\\d+\\.\\d+\\.\\d+)');
+    if (cur && !ctx.force) {
+      const cmp = compareSemver(cur, spec.minVersion);
+      if (cmp === null) {
+        warn(`[warn] ${name}: 版本比较失败 (当前=${cur}, 要求=${spec.minVersion})，默认执行安装`);
+      } else if (cmp >= 0) {
+        log(`[skip] ${name}: v${cur} ≥ ${spec.minVersion}`);
+        summary.skipped.push(name);
+        continue;
+      }
+    }
+
+    if (ctx.dryRun) {
+      log(`[dry-run] ${name}: ${spec.command.join(' ')}`);
+      summary.skipped.push(name);
+      continue;
+    }
+
+    log(`[install] ${name}: ${spec.command.join(' ')}`);
+    // stderr → pipe（捕获用于 EACCES 诊断）；stdout → inherit（实时显示进度）
+    const r = spawnSync(spec.command[0], spec.command.slice(1), {
+      encoding: 'utf8',
+      stdio: ['inherit', 'inherit', 'pipe'],
+      timeout: 180_000,
+    });
+    if (r.status === 0) {
+      log(`[installed] ${name}`);
+      summary.installed.push(name);
+    } else {
+      const stderrText = r.stderr ?? '';
+      const isEacces = /EACCES|permission denied/i.test(stderrText);
+      const reason = r.error
+        ? `error: ${r.error.code ?? r.error.message}`
+        : r.signal
+          ? `killed by ${r.signal} (timeout?)`
+          : `exit ${r.status}`;
+      if (isEacces && spec.tool === 'npm') {
+        warn(`[fail] ${name}: ${reason} — 需要 sudo 或配置 npm prefix（参考 https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally）`);
+      } else {
+        warn(`[fail] ${name}: ${reason}`);
+      }
+      summary.failed.push(name);
+    }
+  }
+
+  if (summary.failed.length > 0) {
+    warn(`LSP SERVERS DONE with ${summary.failed.length} failure(s) (installed=${summary.installed.length} skipped=${summary.skipped.length})`);
+    return false;
+  }
+  log(`LSP SERVERS READY (installed=${summary.installed.length} skipped=${summary.skipped.length})`);
+  return true;
+}
+
 // ─── symlink / copy 安装 ───────────────────────────────
 function installLinkOrCopy(src, dst, ctx) {
   if (!existsSync(src)) fatal(`missing source: ${src}`);
@@ -698,7 +829,8 @@ function printHelp() {
 #   ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（外部 review）
 #   ./install.sh install-coding-bridge-allow # 合并 coding-bridge allow 到 settings.json
 #   ./install.sh install-coding-bridge-json  # 写 coding-bridge MCP 定义到 ~/.claude.json
-#   ./install.sh install-ccstatusline  # 装 ccstatusline-zh 并 symlink 配置到 ~/.config/ccstatusline/`);
+#   ./install.sh install-ccstatusline  # 装 ccstatusline-zh 并 symlink 配置到 ~/.config/ccstatusline/
+#   ./install.sh install-lsp-servers   # 装 TS/Python/Rust 真实 LSP server 后端（manifest 驱动）`);
 }
 
 function parseArgs(argv) {
@@ -728,6 +860,7 @@ function parseArgs(argv) {
       case 'install-coding-bridge-allow': positionals.push('install-coding-bridge-allow'); break;
       case 'install-coding-bridge-json': positionals.push('install-coding-bridge-json'); break;
       case 'install-ccstatusline': positionals.push('install-ccstatusline'); break;
+      case 'install-lsp-servers': positionals.push('install-lsp-servers'); break;
       case '-h':
       case '--help':
         positionals.push('help'); break;
@@ -774,6 +907,7 @@ async function main() {
     'install-coding-bridge-allow': () => installCodingBridgeAllow(ctx),
     'install-coding-bridge-json': () => installCodingBridgeJson(ctx),
     'install-ccstatusline': () => installCcstatusline(ctx),
+    'install-lsp-servers': () => installLspServers(ctx),
   };
 
   const fn = handlers[ctx.action];

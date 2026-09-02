@@ -1,0 +1,33 @@
+{
+  "servers": {
+    "typescript": {
+      "language": "typescript",
+      "tool": "npm",
+      "command": ["npm", "install", "-g", "typescript-language-server", "typescript"],
+      "versionCheck": ["typescript-language-server", "--version"],
+      "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+      "minVersion": "4.0.0",
+      "fileGlobs": ["*.ts", "*.tsx", "*.js", "*.jsx"]
+    },
+    "python": {
+      "language": "python",
+      "tool": "npm",
+      "command": ["npm", "install", "-g", "pyright"],
+      "versionCheck": ["pyright", "--version"],
+      "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+      "minVersion": "1.1.300",
+      "fileGlobs": ["*.py"]
+    },
+    "rust": {
+      "language": "rust",
+      "tool": "rustup",
+      "command": ["rustup", "component", "add", "rust-analyzer"],
+      "versionCheck": ["rust-analyzer", "--version"],
+      "versionRegex": "(\\d+\\.\\d+\\.\\d+)",
+      "minVersion": "1.0.0",
+      "prerequisite": "rustup",
+      "prerequisiteUrl": "https://rustup.rs",
+      "fileGlobs": ["*.rs"]
+    }
+  }
+}

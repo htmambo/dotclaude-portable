@@ -34,6 +34,7 @@ cd dotclaude-portable
 ./install.sh install-statusline   # 把 ccstatusline-zh 注入本机 settings.json
 ./install.sh install-memory-mcp   # 修复 MCP memory 持久化路径
 ./install.sh install-coding-bridge-mcp  # 验证 coding-bridge MCP（External Review）
+./install.sh install-lsp-servers  # 装 TS/Python/Rust 真实 LSP server 后端（可选）
 ./scripts/setup-plugins.sh        # 装 3 marketplace + 7 plugin
 ```
 

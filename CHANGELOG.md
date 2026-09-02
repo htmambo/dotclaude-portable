@@ -8,6 +8,13 @@ All notable changes to **dotclaude-portable** are documented here. Format follow
 
 ### Added
 
+- **`install-lsp-servers` 子命令** —— manifest 驱动装 TS/Python/Rust 真实 LSP server 后端：
+  - 新增 `global/json/lsp-servers.base.json` 声明 3 个 server（typescript-language-server / pyright / rust-analyzer）
+  - 内联 `parseSemver` / `compareSemver`（不引 semver 依赖），`commandExists`（+x 检查），`getVersion`（regex 提取）
+  - 幂等（已装 ≥ minVersion 自动 skip）+ `--force` 强制重装 + `--dry-run` 不真装
+  - prerequisite 检查：rustup 缺失 soft skip + 输出 `https://rustup.rs` 精确指引
+  - EACCES 友好提示（Linux `npm i -g` 权限）：扫描 stderr 命中 `EACCES|permission denied` → 输出 npm prefix 配置文档链接
+  - 不进 `install.sh` 主流程（独立子命令），保留 install 轻量契约
 - **主供应商预设向导（configure.mjs 菜单 2）** —— 切换 Claude Code 本身后端（minimax / 讯飞 / 火山 / 自建中转等兼容服务）：
   - 动态扫描 `~/.claude/*.json` + `global/json/*.base.json`，过滤系统文件后列出预设；用户级覆盖仓库自带同名预设
   - 预设 JSON 顶层可选 `title` / `description` 厂商元数据，向导优先展示

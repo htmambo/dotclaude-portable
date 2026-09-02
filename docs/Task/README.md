@@ -2,6 +2,8 @@
 
 ## 活跃任务 (Active)
 ## 已完成任务 (Archive)
+### 2026-09
+- ✅ [LSP server 集成（manifest 驱动）](Archive/2026-09/LSP_SERVERS_INTEGRATION_PLAN.md) - 完成于 2026-09-01
 ### 2026-07
 - ✅ [循环审核协议实施](Archive/2026-07/REVIEW_LOOP_PROTOCOL_PLAN.md) - 完成于 2026-07-19
 ### 2026-06
