@@ -19,8 +19,11 @@ import {
   chmodSync,
   statSync,
   renameSync,
+  accessSync,
+  constants as fsConstants,
 } from 'node:fs';
 import { dirname, join, basename, relative } from 'node:path';
+import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { backupOnce } from './lib/backup.mjs';
@@ -82,7 +85,6 @@ function renderTemplate(text, env = process.env) {
 
 // ─── LSP server 安装（manifest 驱动） ─────────────────
 // NOTE: 仅 Unix-like 系统（PATH 用 ':' 分隔；依赖 HOME env）。Windows 不在本期范围。
-import { accessSync, constants as fsConstants } from 'node:fs';
 
 // semver "1.2.3" / "v1.2.3" → [1,2,3]；非法返回 null
 function parseSemver(s) {
@@ -885,8 +887,8 @@ async function main() {
   const ctx = {
     action: raw.action,
     mode: raw.mode,
-    repo: raw.repo,
-    home: raw.home,
+    repo: raw.repo ?? REPO_DEFAULT,
+    home: raw.home ?? homedir(),
     dryRun: raw.dryRun,
     force: raw.force,
     rollbackN: raw.rollbackN,
@@ -912,7 +914,9 @@ async function main() {
 
   const fn = handlers[ctx.action];
   if (!fn) { err(`unknown action: ${ctx.action}`); process.exit(2); }
-  fn();
+  // handler 返回 false 表示部分失败（如 install-lsp-servers 有 server 装失败），传导为非零退出码
+  const ok = await fn();
+  if (ok === false) process.exit(1);
 }
 
 main().catch(e => { console.error('[fatal]', e); process.exit(1); });
