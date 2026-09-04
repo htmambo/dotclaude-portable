@@ -1,6 +1,7 @@
 # runtime / transient
 *.bak.*
 *.tmp
+.tmp/
 .DS_Store
 Thumbs.db
 __pycache__/

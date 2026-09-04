@@ -1,4 +1,22 @@
-**Version**: v2.3.0 (2026-06-19)
+**Version**: v2.4.0 (2026-09-05)
+
+## Working Principles
+
+- Think from first principles. Start from real requirements, code facts, and verification results; if the goal is unclear, discuss it with the user first.
+- Code is the source of truth for behavior; **rule documents** (`CLAUDE.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, the project's PR template) are authoritative for workflow. Don't read other Markdown to reverse-engineer code that's right there.
+- Keep changes focused. Don't slip in unrelated refactors or formatting churn along the way.
+- Commit messages and PR descriptions must not include `Co-Authored-By:` lines, AI tool attribution, or references to the authoring agent. Use the project's trailer convention instead (e.g. the `OMC trailers` block: `Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / `Scope-risk:` / `Not-tested:`).
+
+## Workflow Requirements
+
+- Prefer `rg` / `rg --files` over `grep` / `find` when reading code.
+- Follow existing file/module boundaries and local conventions before introducing new patterns.
+- For any **new** public-facing text or test data, use neutral placeholders (`example.com`, `example.test`, `YOUR_API_KEY`) instead of real internal hosts, paths, or credentials. Projects may exempt specific files (e.g. portable config payloads) by listing them in the project's `CLAUDE.md`.
+  Before opening a PR, audit the diff with `rg` over changed paths; if the project ships a secret-scanning tool, run that too.
+- PR titles follow the project's commit convention (typically Conventional Commits). If the project uses scoped prefixes, match its actual style — see the project's `CLAUDE.md` for examples.
+- If the project has a PR template (e.g. `.github/PULL_REQUEST_TEMPLATE.md`), fill it in. Do not leave placeholder text or paste a generic diff summary.
+- The human author — not the agent — must be able to explain the change, its edge cases, and why this approach fits this repository. Agents must not submit PRs the human cannot defend in review.
+- Do not stage throwaway scratch or design mockups. Before `git commit`, run `git status` and `git diff --staged --stat` and remove anything that doesn't belong. If the project provides a scratch directory (e.g. `.tmp/`), put scratch work there.
 
 ## External Review MCP (Auto-Invocation Specification)
 
