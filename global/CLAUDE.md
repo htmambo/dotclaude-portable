@@ -403,6 +403,8 @@ Return value:
 2. Extract verdict in order: (a) ` ```json ` fence JSON `verdict` field (codex form); (b) multi-level markdown LAST-match (coding-bridge form - each level takes the LAST occurrence to avoid false-hit on verdict words quoted in preamble): bold `**VERDICT**` > title `审查结论: VERDICT` / `Verdict: VERDICT` > bare word `APPROVED|REJECTED|NEEDS_CHANGES`.
 3. Unparseable -> `UNKNOWN` -> NOT_APPROVED (fail-closed).
 
+**Coding-bridge verifier cheat** (added 2026-09-13): `coding-bridge-mcp` v1.30.0 does not emit `verdict` in JSON or use bold/title forms — to make the LAST-match above resolve, **always append the VERDICT protocol tail** (see memory `coding-bridge-verdict-protocol`) to `PLAN` / `CODE` before calling `mcp__coding-bridge__review_plan` / `review_code`. The tail is provider adapter, not a contract change. Trust boundary remains §1.4 (main assistant independent judgment) — APPROVED from the model must still be cross-checked against the enumerated `risks[]`.
+
 **Override declaration**: this protocol takes precedence over the `REJECTED does not block main flow` default in `~/.claude/skills/fullauto/SKILL.md` `Review_Advisor`. The SKILL.md `same-file 3× REJECTED -> qa-blocker stop` guard is superseded by this 5-round cap (counted at the review-timing scope, not per-file).
 
 **Scope-matching degradation** (watchdog): when the review's file scope cannot be reliably extracted from the tool call, degrade to fail-closed - any unresolved NOT_APPROVED in the current session warns on any Write/Edit of a code file.
