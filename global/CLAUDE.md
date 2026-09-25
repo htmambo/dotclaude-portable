@@ -18,6 +18,25 @@
 - The human author — not the agent — must be able to explain the change, its edge cases, and why this approach fits this repository. Agents must not submit PRs the human cannot defend in review.
 - Do not stage throwaway scratch or design mockups. Before `git commit`, run `git status` and `git diff --staged --stat` and remove anything that doesn't belong. If the project provides a scratch directory (e.g. `.tmp/`), put scratch work there.
 
+### Commit trigger policy
+
+- **Default**: agent MUST NOT execute `git commit` / `git push` / open a PR /
+  merge a PR on its own initiative. These actions only run after the user
+  gives an **explicit verb instruction** in the current session, e.g.:
+  - "commit it" / "commit this" / "提交" / "commit 一下"
+  - "push it" / "open the PR" / "merge it" / "推送" / "开 PR" / "合并"
+- **Does NOT count as an explicit instruction**:
+  - Generic acknowledgements: "continue", "ok", "go ahead", "looks good",
+    "可以", "好的".
+  - Implied consent from earlier framing ("do X when you're done" does not
+    authorize commit).
+- **Helper operations the agent may perform without instruction**:
+  - Read-only / reversible commands: `git add`, `git status`, `git diff`,
+    `git log`, `git stash` (only when stashing unpushed content).
+  - Drafting the commit message, assembling the trailer block, preparing
+    the PR description — writing a draft to a file is NOT the same as
+    executing `git commit`.
+
 ## External Review MCP (Auto-Invocation Specification)
 
 > **Critical clarification: `runReview()` is a verbal alias, NOT an implemented function.**

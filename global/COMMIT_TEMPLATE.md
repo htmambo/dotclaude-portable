@@ -1,5 +1,20 @@
 # Git 提交信息模板
 
+> ⚠️ **提交触发约定**（源自 `global/CLAUDE.md` §"Commit trigger policy"）
+>
+> **默认禁止** agent 主动执行 `git commit` / `git push` / 开启 PR / 合并 PR。
+> 这些动作**仅当**用户在本会话内给出**明确动词指令**后才执行，例如：
+> "commit it" / "commit this" / "提交" / "commit 一下" / "push it" / "推送"
+> / "open the PR" / "开 PR" / "merge it" / "合并"。
+>
+> **不算明确指令**："继续"、"好"、"ok"、"go ahead"、"看起来不错"、
+> "可以"、"好的"，以及"完成后做 X"这类隐含授权。
+>
+> **可自由执行的辅助操作**：`git add` / `git status` / `git diff` /
+> `git log` / `git stash`（仅 stash 未推送内容时），
+> 以及**起草** commit message、**构造** trailer 块、**准备** PR description。
+> 注意：把 commit message 写到文件 ≠ 执行 `git commit`。
+
 ## 请严格按照此模板填写
 
 ```
