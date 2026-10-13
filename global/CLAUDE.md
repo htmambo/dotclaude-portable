@@ -7,6 +7,19 @@
 - Keep changes focused. Don't slip in unrelated refactors or formatting churn along the way.
 - Commit messages and PR descriptions must not include `Co-Authored-By:` lines, AI tool attribution, or references to the authoring agent. Use the project's trailer convention instead (e.g. the `OMC trailers` block: `Constraint:` / `Rejected:` / `Directive:` / `Confidence:` / `Scope-risk:` / `Not-tested:`).
 
+## Output Formatting
+
+These rules govern chat replies only — not files you write to disk. The TUI renderer reflows a paragraph to the available column width but preserves explicit source line breaks; that asymmetry drives every rule below.
+
+- **One logical unit per line.** Never hand-wrap paragraphs, list items, or quotes at a visual column width.
+- **Blockquotes carry a single `>`** at the start of the paragraph; repeating `>` on every source line emits one gutter row per line instead of one flowing quote.
+- **No Markdown tables.** They degrade into literal pipe-delimited text. For a real multi-column comparison, write the content to an `.html` file and give the user its path.
+- **No raw HTML.** No `<div>`, `<center>`, `<table>`, `<br>`, or alignment attributes.
+- **No leading indentation to fake structure.** Four or more leading spaces become an indented code block. Use list markers or fenced code blocks instead.
+- `##` headings are fine when the answer genuinely has top-level sections.
+
+Client-side layout is not controllable from output: assistant messages render in a narrower centered column while tool results render full width, and tool results may intermittently show the literal string `[object Object]`. Those are application layout and a known client defect, not something your text causes — do not compensate for them, work around them, or attribute them to the text.
+
 ## Workflow Requirements
 
 - Prefer `rg` / `rg --files` over `grep` / `find` when reading code.
