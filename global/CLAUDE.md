@@ -59,7 +59,7 @@ You **must execute** the following steps:
 <EXTREMELY-IMPORTANT>
 **Calling `codex` strictly forbids the `model` parameter** (root cause of the 2026-06-08 503 incident).
 **Calling `codex` strictly forbids the `yolo` parameter** (unless explicitly required by the user).
-See §4 Incident Retrospective for details.
+See the incident retrospective (`事故复盘（2026-06-08）`) under `§4` of `~/.claude/skills/fullauto/SKILL.md` for details.
 </EXTREMELY-IMPORTANT>
 
 **Key change: All interactions with the External Review MCP must be completed via tool calls. Do not output explanatory text before or after tool calls, to avoid breaking the tool call format.**
@@ -83,7 +83,7 @@ Note: `COMMIT_TEMPLATE.md` already contains the OMC trailer block at its end (`C
 | 2 | After the implementation plan, before starting coding | `plan` | PLAN.md |
 | 3-pre | End of fullauto Phase 0 (spec landing) | `plan` | `## External Review Opinion (Phase 0)` |
 | 3 | End of fullauto Phase 1 (plan landing) | `plan` | `## External Review Opinion (Phase 1)` |
-| 4 | Single-file fix complete (fullauto §4.a / manual §4.b trigger) | `code` | `## Runtime Decisions` |
+| 4 | Single-file fix complete (fullauto §4.a / manual §4.d trigger) | `code` | `## Runtime Decisions` |
 | 5 | End of fullauto Phase 4 (validation landing) | `plan` | `## External Review Opinion (Phase 4)` |
 
 **Provider resolution** (first match wins):
@@ -98,7 +98,7 @@ Allowed values: `codex` | `coding-bridge`. Fallback chain is hard-coded as `codi
 
 | Provider | Tool | Sandbox | Notes |
 |---|---|---|---|
-| `codex` | `mcp__codex__codex` | ✅ `sandbox="read-only"` | **Strictly forbid `model`** (see §4 Incident Retrospective) |
+| `codex` | `mcp__codex__codex` | ✅ `sandbox="read-only"` | **Strictly forbid `model`** (see `事故复盘（2026-06-08）` under §4 of `~/.claude/skills/fullauto/SKILL.md`) |
 | `coding-bridge` | `mcp__coding-bridge__review_code` / `review_plan` | ❌ PROMPT first line same as above | Dedicated review interface with strongly-typed `kind` parsing (`code` → `review_code`; `plan` / `requirement` → `review_plan`) |
 
 All operations must strictly follow the system constraints below:
@@ -332,7 +332,7 @@ Return value (unified normalization):
 
 **Required**: `PROMPT`, `cd`
 **Optional**: `sandbox` (default `read-only`), `SESSION_ID`, `skip_git_repo_check`, `return_all_messages`, `image`
-**Strictly forbidden**: `model` (forcing it client-side triggers 503 — see §4 Incident Retrospective), `yolo` (unless explicitly required by the user)
+**Strictly forbidden**: `model` (forcing it client-side triggers 503 — see `事故复盘（2026-06-08）` under §4 of `~/.claude/skills/fullauto/SKILL.md`), `yolo` (unless explicitly required by the user)
 
 Return value:
 ```
@@ -370,7 +370,7 @@ Return value:
 
 **Second priority: switch fallback provider**
 
-- Fallback chain is hard-coded: `coding-bridge → codex`. codex MCP strictly forbids `model` (see §4 Incident Retrospective) — do not pass it when falling back.
+- Fallback chain is hard-coded: `coding-bridge → codex`. codex MCP strictly forbids `model` (see `事故复盘（2026-06-08）` under §4 of `~/.claude/skills/fullauto/SKILL.md`) — do not pass it when falling back.
 
 **Third priority: complete the task independently**
 
@@ -422,22 +422,16 @@ Return value:
 2. Extract verdict in order: (a) ` ```json ` fence JSON `verdict` field (codex form); (b) multi-level markdown LAST-match (coding-bridge form - each level takes the LAST occurrence to avoid false-hit on verdict words quoted in preamble): bold `**VERDICT**` > title `审查结论: VERDICT` / `Verdict: VERDICT` > bare word `APPROVED|REJECTED|NEEDS_CHANGES`.
 3. Unparseable -> `UNKNOWN` -> NOT_APPROVED (fail-closed).
 
-**Coding-bridge verifier cheat** (added 2026-09-13): `coding-bridge-mcp` v1.30.0 does not emit `verdict` in JSON or use bold/title forms — to make the LAST-match above resolve, **always append the VERDICT protocol tail** (see memory `coding-bridge-verdict-protocol`) to `PLAN` / `CODE` before calling `mcp__coding-bridge__review_plan` / `review_code`. The tail is provider adapter, not a contract change. Trust boundary remains §1.4 (main assistant independent judgment) — APPROVED from the model must still be cross-checked against the enumerated `risks[]`.
+**Coding-bridge verifier cheat** (added 2026-09-13): `coding-bridge-mcp` v1.30.0 does not emit `verdict` in JSON or use bold/title forms — to make the LAST-match above resolve, **always append the VERDICT protocol tail** to `PLAN` / `CODE` before calling `mcp__coding-bridge__review_plan` / `review_code`: instruct the reviewer to end its response with a `risks:` list (or "none") followed by a final line `**VERDICT**: APPROVED | REJECTED | NEEDS_CHANGES` (the last occurrence wins). The tail is provider adapter, not a contract change. Trust boundary remains §1.4 (main assistant independent judgment) — APPROVED from the model must still be cross-checked against the enumerated `risks[]`.
 
-**Override declaration**: this protocol takes precedence over the `REJECTED does not block main flow` default in `~/.claude/skills/fullauto/SKILL.md` `Review_Advisor`. The SKILL.md `same-file 3× REJECTED -> qa-blocker stop` guard is superseded by this 5-round cap (counted at the review-timing scope, not per-file).
+**Override declaration**: this protocol takes precedence over the `REJECTED does not block main flow` default in `~/.claude/skills/fullauto/SKILL.md` `Review_Advisor`. The SKILL.md `same-file 5× REJECTED -> qa-blocker stop` guard is superseded by this 5-round cap (counted at the review-timing scope, not per-file).
 
 **Scope-matching degradation** (watchdog): when the review's file scope cannot be reliably extracted from the tool call, degrade to fail-closed - any unresolved NOT_APPROVED in the current session warns on any Write/Edit of a code file.
 
-<!-- OMC:IMPORT:START -->
-
-@CLAUDE-omc.md
-
-<!-- OMC:IMPORT:END -->
-
 ## /fullauto Collaboration Agreement
 
-> **Authoritative source migration**: the content of this section (task slicing, dual index, phase synchronization points, §4 external review, §4.a–§4.c single-file granularity, §4.d manual mode review, §5 commit template, §6/§7 cleanup protocol, §8 zero-ask boundary) has been migrated to the `## Collaboration Agreement` section of `~/.claude/skills/fullauto/SKILL.md`.
+> **Authoritative source migration**: the content of this section (task slicing, dual index, phase synchronization points, §4 external review, §4.a–§4.c single-file granularity, §4.d manual mode review, §5 commit template, §6/§7 cleanup protocol, §8 zero-ask boundary) has been migrated to the `## 协作约定（权威源）` (Collaboration Agreement) section of `~/.claude/skills/fullauto/SKILL.md`.
 >
 > **Strictly forbidden to maintain this protocol in this file**—to avoid dual-source drift. If adjustments are needed, please directly modify SKILL.md; this section remains as a pointer.
 >
-> **Strong guidance**: before any `/fullauto` task execution, you must first `Read ~/.claude/skills/fullauto/SKILL.md` to load the `## Collaboration Agreement` section (load on demand trigger).
+> **Strong guidance**: before any `/fullauto` task execution, you must first `Read ~/.claude/skills/fullauto/SKILL.md` to load the `## 协作约定（权威源）` (Collaboration Agreement) section (load on demand trigger).
