@@ -285,3 +285,30 @@ git diff ~/.claude/CLAUDE.md       # 检查是否丢了内容
 - **1.0.5+ 已支持**：默认 macOS bash 3.2.57（Apple 因 GPLv3 拒绝升级）下 `./install.sh --force` 跑通，hooks 正确部署
 - Linux 同样可用（bash 4/5）
 - 系统需预装 `python3`（macOS 13+ 自带 / 旧版 `brew install python3`）与 `npx`（`brew install node`）
+
+## Kimi Code（`install-kimi.sh`）
+
+`install.sh` 只面向 Claude Code（目标 `~/.claude/`）。要装到 **Kimi Code CLI**，用平行入口：
+
+```bash
+./install-kimi.sh --dry-run     # 先预演
+./install-kimi.sh               # 安装（默认 symlink；--copy / --force 同 install.sh）
+./install-kimi.sh --with-commands  # 额外把 commands/*.md 装为扁平 skill
+./install-kimi.sh --check       # 巡检
+./install-kimi.sh --uninstall   # 摘除 symlink + 剥离 config.toml 托管块
+```
+
+数据根默认 `~/.kimi-code/`，设了 `KIMI_CODE_HOME` 时自动跟随。同步映射：
+
+| 仓库路径 | 落点（相对 `~/.kimi-code/`） | 说明 |
+|---|---|---|
+| `global/CLAUDE.md` | `AGENTS.md` | 全局指令；⚠️ 内容面向 Claude 编写，装完需人工审查 |
+| `skills/fullauto/SKILL.md` | `skills/fullauto/SKILL.md` | 目录形式 skill，frontmatter 格式兼容 |
+| `commands/*.md`（opt-in） | `skills/*.md` | 扁平形式 skill（`/skill:<名字>` 调用）；正文面向 Claude，需改写 |
+| `hooks/*.mjs` | `hooks/` + `config.toml` 的 `[[hooks]]` 托管块 | 事件名一致（PreToolUse/PostToolUse/UserPromptSubmit）；`nudge-review.sh` 是 git hook 不部署 |
+| `global/json/mcp.base.json` | 合并进 `mcp.json` 的 `mcpServers` | 同名 server 默认保留，`--force` 覆盖 |
+| coding-bridge 权限 | `config.toml` 的 `[[permission.rules]]` allow `mcp__coding-bridge__*` | 对应 Claude 的 `permissions.allow` |
+
+不可移植（Claude 生态独有）：`scripts/setup-plugins.sh` 的 marketplace/plugin、`tools/configure.mjs` 主供应商预设（Kimi 用 `config.toml` 的 `providers`/`models`）、ccstatusline-zh statusline（stdin JSON 格式不同）。
+
+注意：`config.toml` 中 `# >>> dotclaude-portable-kimi start/end <<<` 标记之间是托管块，手工改动会在下次 install 时被覆盖；`mcp.json` 的合并在 uninstall 时**不**回滚（避免误删手工改动），用 `.bak.*` 备份恢复。

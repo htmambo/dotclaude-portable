@@ -43,6 +43,24 @@ HOME="$FAKE_HOME" "$REPO_ROOT/install.sh" --check || true
 step "6. uninstall"
 HOME="$FAKE_HOME" "$REPO_ROOT/install.sh" --uninstall
 
+step "6b. install-kimi (Kimi Code target)"
+HOME="$FAKE_HOME" "$REPO_ROOT/install-kimi.sh" --dry-run
+HOME="$FAKE_HOME" "$REPO_ROOT/install-kimi.sh" --force
+HOME="$FAKE_HOME" "$REPO_ROOT/install-kimi.sh" --check
+HOME="$FAKE_HOME" "$REPO_ROOT/install-kimi.sh" --uninstall
+# 卸载后 config.toml 必须是合法 TOML（tomllib 需 Python 3.11+，缺失则跳过）
+if [[ -f "$FAKE_HOME/.kimi-code/config.toml" ]]; then
+  python3 - "$FAKE_HOME/.kimi-code/config.toml" <<'EOF'
+import sys
+try:
+    import tomllib
+except ImportError:
+    sys.exit(0)
+with open(sys.argv[1], 'rb') as f:
+    tomllib.load(f)
+EOF
+fi
+
 step "7. standalone scan-secrets"
 python3 "$REPO_ROOT/tools/scan-secrets.py" "$REPO_ROOT"
 

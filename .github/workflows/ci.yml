@@ -69,6 +69,17 @@ jobs:
         run: |
           HOME="$HOME_DIR" ./install.sh --uninstall
 
+      - name: install-kimi to fake HOME
+        shell: bash
+        env:
+          HOME_DIR: ${{ runner.temp }}/fake-home-kimi
+        run: |
+          mkdir -p "$HOME_DIR"
+          HOME="$HOME_DIR" ./install-kimi.sh --dry-run
+          HOME="$HOME_DIR" ./install-kimi.sh --force
+          HOME="$HOME_DIR" ./install-kimi.sh --check
+          HOME="$HOME_DIR" ./install-kimi.sh --uninstall
+
       - name: standalone scan-secrets on repo
         shell: bash
         run: python3 tools/scan-secrets.py .
