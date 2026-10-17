@@ -117,11 +117,11 @@ function commandExists(cmd) {
 function getVersion(cmd, regexStr) {
   const r = spawnSync(cmd[0], cmd.slice(1), { encoding: 'utf8', timeout: 10_000 });
   if (r.error) {
-    if (r.error.code !== 'ENOENT') warn(`[warn] 版本探测异常: ${r.error.message}`);
+    if (r.error.code !== 'ENOENT') warn(`[警告] 版本探测异常: ${r.error.message}`);
     return null;
   }
   if (r.signal === 'SIGTERM') {
-    warn(`[warn] 版本探测超时: ${cmd.join(' ')}`);
+    warn(`[警告] 版本探测超时: ${cmd.join(' ')}`);
     return null;
   }
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -130,11 +130,11 @@ function getVersion(cmd, regexStr) {
 }
 function loadLspManifest(repoDir) {
   const p = join(repoDir, 'global', 'json', 'lsp-servers.base.json');
-  if (!existsSync(p)) fatal(`missing LSP manifest: ${p}`);
+  if (!existsSync(p)) fatal(`缺少 LSP manifest: ${p}`);
   let m;
   try { m = JSON.parse(readFileSync(p, 'utf8')); }
-  catch (e) { fatal(`invalid LSP manifest: ${e.message}`); }
-  if (!m.servers || typeof m.servers !== 'object') fatal('LSP manifest: missing "servers" object');
+  catch (e) { fatal(`LSP manifest 解析失败: ${e.message}`); }
+  if (!m.servers || typeof m.servers !== 'object') fatal('LSP manifest: 缺少 "servers" 对象');
   return m;
 }
 function installLspServers(ctx) {
@@ -144,18 +144,18 @@ function installLspServers(ctx) {
   for (const [name, spec] of Object.entries(manifest.servers)) {
     // spec 基础校验
     if (!spec || typeof spec !== 'object') {
-      warn(`[skip] ${name}: spec 格式非法`); summary.skipped.push(name); continue;
+      warn(`[跳过] ${name}: spec 格式非法`); summary.skipped.push(name); continue;
     }
     if (!Array.isArray(spec.versionCheck) || spec.versionCheck.length === 0) {
-      warn(`[skip] ${name}: 缺少 versionCheck 数组`); summary.skipped.push(name); continue;
+      warn(`[跳过] ${name}: 缺少 versionCheck 数组`); summary.skipped.push(name); continue;
     }
     if (!Array.isArray(spec.command) || spec.command.length === 0) {
-      warn(`[skip] ${name}: 缺少 command 数组`); summary.skipped.push(name); continue;
+      warn(`[跳过] ${name}: 缺少 command 数组`); summary.skipped.push(name); continue;
     }
 
     if (spec.prerequisite && !commandExists(spec.prerequisite)) {
       const url = spec.prerequisiteUrl ? `（${spec.prerequisiteUrl}）` : '';
-      warn(`[skip] ${name}: 需要先装 ${spec.prerequisite}${url}`);
+      warn(`[跳过] ${name}: 需要先装 ${spec.prerequisite}${url}`);
       summary.skipped.push(name);
       continue;
     }
@@ -164,9 +164,9 @@ function installLspServers(ctx) {
     if (cur && !ctx.force) {
       const cmp = compareSemver(cur, spec.minVersion);
       if (cmp === null) {
-        warn(`[warn] ${name}: 版本比较失败 (当前=${cur}, 要求=${spec.minVersion})，默认执行安装`);
+        warn(`[警告] ${name}: 版本比较失败 (当前=${cur}, 要求=${spec.minVersion})，默认执行安装`);
       } else if (cmp >= 0) {
-        log(`[skip] ${name}: v${cur} ≥ ${spec.minVersion}`);
+        log(`[跳过] ${name}: v${cur} ≥ ${spec.minVersion}`);
         summary.skipped.push(name);
         continue;
       }
@@ -186,36 +186,36 @@ function installLspServers(ctx) {
       timeout: 180_000,
     });
     if (r.status === 0) {
-      log(`[installed] ${name}`);
+      log(`[已安装] ${name}`);
       summary.installed.push(name);
     } else {
       const stderrText = r.stderr ?? '';
       const isEacces = /EACCES|permission denied/i.test(stderrText);
       const reason = r.error
-        ? `error: ${r.error.code ?? r.error.message}`
+        ? `错误: ${r.error.code ?? r.error.message}`
         : r.signal
-          ? `killed by ${r.signal} (timeout?)`
-          : `exit ${r.status}`;
+          ? `被 ${r.signal} 终止（可能超时）`
+          : `退出码 ${r.status}`;
       if (isEacces && spec.tool === 'npm') {
-        warn(`[fail] ${name}: ${reason} — 需要 sudo 或配置 npm prefix（参考 https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally）`);
+        warn(`[失败] ${name}: ${reason} — 需要 sudo 或配置 npm prefix（参考 https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally）`);
       } else {
-        warn(`[fail] ${name}: ${reason}`);
+        warn(`[失败] ${name}: ${reason}`);
       }
       summary.failed.push(name);
     }
   }
 
   if (summary.failed.length > 0) {
-    warn(`LSP SERVERS DONE with ${summary.failed.length} failure(s) (installed=${summary.installed.length} skipped=${summary.skipped.length})`);
+    warn(`LSP server 安装完成，${summary.failed.length} 个失败（已安装=${summary.installed.length} 跳过=${summary.skipped.length}）`);
     return false;
   }
-  log(`LSP SERVERS READY (installed=${summary.installed.length} skipped=${summary.skipped.length})`);
+  log(`LSP server 就绪（已安装=${summary.installed.length} 跳过=${summary.skipped.length}）`);
   return true;
 }
 
 // ─── symlink / copy 安装 ───────────────────────────────
 function installLinkOrCopy(src, dst, ctx) {
-  if (!existsSync(src)) fatal(`missing source: ${src}`);
+  if (!existsSync(src)) fatal(`源文件缺失: ${src}`);
   mkdirSync(dirname(dst), { recursive: true });
 
   // 已存在的处理
@@ -225,14 +225,14 @@ function installLinkOrCopy(src, dst, ctx) {
   if (existing?.isSymbolicLink()) {
     const cur = readlinkSync(dst);
     if (cur === src) {
-      log(`skip (linked): ${relative(ctx.home, dst)}`);
+      log(`跳过（已链接）: ${relative(ctx.home, dst)}`);
       return;
     }
-    warn(`existing symlink → ${cur}`);
-    if (!ctx.force) fatal(`use --force to replace`);
+    warn(`已存在 symlink → ${cur}`);
+    if (!ctx.force) fatal(`请用 --force 覆盖`);
     if (!ctx.dryRun) unlinkSync(dst);
   } else if (existing) {
-    if (!ctx.force) warn(`exists: ${relative(ctx.home, dst)} (use --force to overwrite)`);
+    if (!ctx.force) warn(`已存在: ${relative(ctx.home, dst)}（用 --force 覆盖）`);
     if (!ctx.dryRun) {
       const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
       renameSync(dst, `${dst}.bak.${ts}`);
@@ -245,17 +245,17 @@ function installLinkOrCopy(src, dst, ctx) {
   }
   if (ctx.mode === 'symlink') {
     symlinkSync(src, dst);
-    log(`link: ${relative(ctx.home, dst)} → ${relative(ctx.repo, src)}`);
+    log(`链接: ${relative(ctx.home, dst)} → ${relative(ctx.repo, src)}`);
     return;
   }
   copyFileSync(src, dst);
-  log(`copy: ${relative(ctx.home, dst)}`);
+  log(`拷贝: ${relative(ctx.home, dst)}`);
   // 仅当源文件本身有 x 位才设 0o755；避免给 JSON / md 等配置文件加不必要的执行位
   try {
     const srcStat = statSync(src);
     if (srcStat.mode & 0o111) chmodSync(dst, 0o755);
   } catch (e) {
-    warn(`chmod skipped for ${dst}: ${e.message}`);
+    warn(`chmod 跳过 ${dst}: ${e.message}`);
   }
 }
 
@@ -292,7 +292,7 @@ const MAP = [
 function renderInstall(src, dst, kind, ctx) {
   const homeRel = relative(ctx.home, dst);
   if (existsSync(dst)) {
-    log(`skip render (exists): ${homeRel}`);
+    log(`跳过渲染（已存在）: ${homeRel}`);
     return;
   }
   mkdirSync(dirname(dst), { recursive: true });
@@ -301,15 +301,15 @@ function renderInstall(src, dst, kind, ctx) {
     return;
   }
   // render
-  if (!existsSync(src)) fatal(`missing source: ${src}`);
+  if (!existsSync(src)) fatal(`源文件缺失: ${src}`);
   const raw = readFileSync(src, 'utf8');
   const out = renderTemplate(raw);
   if (ctx.dryRun) {
-    log(`render+install: ${homeRel}`);
+    log(`渲染+安装: ${homeRel}`);
     return;
   }
   atomicWriteFile(dst, out, { mode: 0o600 });
-  log(`render+install: ${homeRel}`);
+  log(`渲染+安装: ${homeRel}`);
 }
 
 // ─── 备份现有文件（首次安装）────────────────────────────
@@ -335,7 +335,7 @@ function backupExisting(ctx) {
       renameSync(dst, join(snap, relDst));
     }
   }
-  log(`backed up existing files to ${snap}`);
+  log(`已备份现有文件到 ${snap}`);
   pruneBackups(p.BACKUP_ROOT, ctx);
 }
 
@@ -347,9 +347,9 @@ function pruneBackups(backupRoot, ctx) {
     .reverse();
   if (snaps.length > MAX_BACKUPS) {
     for (const d of snaps.slice(MAX_BACKUPS)) {
-      if (ctx.dryRun) log(`[dry-run] would prune: ${join(backupRoot, d)}`);
+      if (ctx.dryRun) log(`[dry-run] 将清理: ${join(backupRoot, d)}`);
       else {
-        log(`pruning old backup: ${join(backupRoot, d)}`);
+        log(`清理旧备份: ${join(backupRoot, d)}`);
         rmSync(join(backupRoot, d), { recursive: true });
       }
     }
@@ -369,9 +369,9 @@ function injectShellProfile(ctx) {
     if (!existsSync(f)) continue;
     const txt = readFileSync(f, 'utf8');
     if (txt.includes(BLOCK_START) || txt.includes(LEGACY_MARKER)) {
-      log(`shell profile tagged: ${f}`); continue;
+      log(`shell 配置文件已有标记: ${f}`); continue;
     }
-    log(`appending to ${f}`);
+    log(`追加到 ${f}`);
     if (!ctx.dryRun) writeFileSync(f, block, { flag: 'a' });
   }
 }
@@ -384,7 +384,7 @@ function stripShellProfile(ctx) {
     const hasOrphanStart = !hasBlock && txt.includes(BLOCK_START);
     const hasLegacy = txt.includes(LEGACY_MARKER);
     if (!hasBlock && !hasOrphanStart && !hasLegacy) continue;
-    log(`stripping dotclaude-portable block from ${f}`);
+    log(`从 ${f} 剥离 dotclaude-portable 块`);
     if (ctx.dryRun) continue;
     // 1) 完整 begin/end 块（可能多个，循环清除）
     while (txt.includes(BLOCK_START) && txt.includes(BLOCK_END)) {
@@ -412,7 +412,7 @@ function writeVersionFile(ctx) {
   let ver = '0.2.0';
   const verFile = join(ctx.repo, 'VERSION');
   if (existsSync(verFile)) ver = readFileSync(verFile, 'utf8').trim();
-  if (ctx.dryRun) { log(`[dry-run] would write ${marker} (${ver})`); return; }
+  if (ctx.dryRun) { log(`[dry-run] 将写入 ${marker}（${ver}）`); return; }
   writeFileSync(marker, `repo=${ctx.repo}\nversion=${ver}\ninstalled_at=${new Date().toISOString()}\n`);
 }
 
@@ -424,7 +424,7 @@ function installPreSyncDocsHook(ctx) {
   const hook = join(ctx.repo, '.git', 'hooks', 'pre-commit');
   // bash 模板:转义 ${...} 给运行时解析(BASH_SOURCE)
   const script = `#!/usr/bin/env bash
-# dotclaude-portable pre-commit hook
+# dotclaude-portable pre-commit 钩子
 # 若新增 hook/command/skill 文件但 README 未同步,abort commit,提示运行:
 #   node scripts/sync-docs.mjs --apply
 set -euo pipefail
@@ -436,21 +436,21 @@ if [[ "\$STAGED" == *"hooks/"* ]] \\
    || [[ "\$STAGED" == *"scripts/sync-docs.mjs"* ]]; then
   # Node 缺失时跳过检查(不要因为环境问题阻塞提交)
   if ! command -v node >/dev/null 2>&1; then
-    echo '[dotclaude-portable pre-commit] node not found; skipping sync-docs check' >&2
+    echo '[dotclaude-portable pre-commit] 未找到 node；跳过 sync-docs 检查' >&2
     exit 0
   fi
   REPO_ROOT="\$(cd -- "\$(dirname -- "\${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
   node "\${REPO_ROOT}/scripts/sync-docs.mjs" --check
 fi
 `;
-  if (ctx.dryRun) { log(`[dry-run] would install sync-docs pre-commit hook at ${hook}`); return; }
+  if (ctx.dryRun) { log(`[dry-run] 将安装 sync-docs pre-commit hook 到 ${hook}`); return; }
   // 已存在 hook：无 ctx.force 则 skip + warn，避免静默覆盖用户自定义 hook
   if (existsSync(hook) && !ctx.force) {
-    warn(`pre-commit hook already exists at ${hook}; skipping (use --force to overwrite)`);
+    warn(`pre-commit hook 已存在于 ${hook}；跳过（用 --force 覆盖）`);
     return;
   }
-  if (existsSync(hook)) log(`overwriting existing pre-commit hook at ${hook} (--force)`);
-  log(`installing sync-docs pre-commit hook → ${hook}`);
+  if (existsSync(hook)) log(`覆盖已存在的 pre-commit hook ${hook}（--force）`);
+  log(`安装 sync-docs pre-commit hook → ${hook}`);
   mkdirSync(dirname(hook), { recursive: true });
   writeFileSync(hook, script);
   chmodSync(hook, 0o755);
@@ -463,16 +463,16 @@ function installPrePush(ctx) {
   const script = `#!/usr/bin/env bash
 set -e
 REPO_ROOT="$(cd -- "$(dirname -- "\${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
-python3 "\${REPO_ROOT}/tools/scan-secrets.py" "\${REPO_ROOT}" || { echo '[pre-push] secret detected; abort' >&2; exit 1; }
+python3 "\${REPO_ROOT}/tools/scan-secrets.py" "\${REPO_ROOT}" || { echo '[pre-push] 检测到 secret；中止推送' >&2; exit 1; }
 `;
-  if (ctx.dryRun) { log(`[dry-run] would install pre-push hook at ${hook}`); return; }
+  if (ctx.dryRun) { log(`[dry-run] 将安装 pre-push hook 到 ${hook}`); return; }
   // 已存在 hook：无 ctx.force 则 skip + warn
   if (existsSync(hook) && !ctx.force) {
-    warn(`pre-push hook already exists at ${hook}; skipping (use --force to overwrite)`);
+    warn(`pre-push hook 已存在于 ${hook}；跳过（用 --force 覆盖）`);
     return;
   }
-  if (existsSync(hook)) log(`overwriting existing pre-push hook at ${hook} (--force)`);
-  log(`installing pre-push hook → ${hook}`);
+  if (existsSync(hook)) log(`覆盖已存在的 pre-push hook ${hook}（--force）`);
+  log(`安装 pre-push hook → ${hook}`);
   mkdirSync(dirname(hook), { recursive: true });
   writeFileSync(hook, script);
   chmodSync(hook, 0o755);
@@ -493,11 +493,11 @@ function installMemoryMcp(ctx) {
       if (cur === memFile) already = true;
     } catch {}
   }
-  if (already) { log(`memory MCP already configured: ${memFile}`); return; }
+  if (already) { log(`memory MCP 已配置: ${memFile}`); return; }
 
-  if (ctx.dryRun) { log(`[dry-run] would patch ${mcpConfig}`); return; }
+  if (ctx.dryRun) { log(`[dry-run] 将修改 ${mcpConfig}`); return; }
   const memBak = backupOnce(mcpConfig);
-  if (memBak) log(`backup: ${memBak}`);
+  if (memBak) log(`备份: ${memBak}`);
 
   let d = {};
   try { d = JSON.parse(readFileSync(mcpConfig, 'utf8')); } catch {}
@@ -510,35 +510,35 @@ function installMemoryMcp(ctx) {
   servers.memory = mem;
   d.mcpServers = servers;
   atomicWriteJSON(mcpConfig, d, { mode: 0o600 });
-  log(`memory MCP configured: MEMORY_FILE_PATH=${memFile}`);
-  warn(`restart Claude Code to activate new config`);
+  log(`memory MCP 已配置: MEMORY_FILE_PATH=${memFile}`);
+  warn(`重启 Claude Code 以激活新配置`);
 }
 
 // ─── coding-bridge JSON（合并到 ~/.claude.json.mcpServers） ──
 function installCodingBridgeJson(ctx) {
   const p = makePaths(ctx);
   if (!existsSync(p.CLAUDE_JSON)) {
-    warn(`${p.CLAUDE_JSON} not found; skip (run Claude Code once to bootstrap, then rerun)`);
+    warn(`未找到 ${p.CLAUDE_JSON}；跳过（先运行一次 Claude Code 完成初始化，再重跑）`);
     return;
   }
 
   let d;
   try { d = JSON.parse(readFileSync(p.CLAUDE_JSON, 'utf8')); }
-  catch (e) { warn(`invalid ${p.CLAUDE_JSON}: ${e.message}; skip`); return; }
+  catch (e) { warn(`${p.CLAUDE_JSON} 解析失败: ${e.message}；跳过`); return; }
 
   // 已存在的跳过，缺失的补齐
   const servers = d.mcpServers ?? {};
   const hasCb = servers['coding-bridge']?.command === 'uvx';
   if (hasCb) {
-    log(`coding-bridge: already in ${p.CLAUDE_JSON} mcpServers`);
+    log(`coding-bridge: 已在 ${p.CLAUDE_JSON} 的 mcpServers 中`);
     return;
   }
   if (ctx.dryRun) {
-    if (!hasCb) log(`[dry-run] would add coding-bridge to ${p.CLAUDE_JSON} mcpServers`);
+    if (!hasCb) log(`[dry-run] 将添加 coding-bridge 到 ${p.CLAUDE_JSON} 的 mcpServers`);
     return;
   }
 
-  const cjBak = backupOnce(p.CLAUDE_JSON); if (cjBak) log(`backup: ${cjBak}`);
+  const cjBak = backupOnce(p.CLAUDE_JSON); if (cjBak) log(`备份: ${cjBak}`);
   if (!hasCb) {
     servers['coding-bridge'] = {
       command: 'uvx',
@@ -557,19 +557,19 @@ function installCodingBridgeJson(ctx) {
   d.mcpServers = servers;
   atomicWriteJSON(p.CLAUDE_JSON, d, { mode: 0o600 });
   const added = [!hasCb && 'coding-bridge'].filter(Boolean);
-  log(`added ${added.join(' + ')} to ${p.CLAUDE_JSON} mcpServers`);
+  log(`已添加 ${added.join(' + ')} 到 ${p.CLAUDE_JSON} 的 mcpServers`);
 }
 
 // ─── coding-bridge allow（合并到 settings.json.permissions.allow） ──
 function installCodingBridgeAllow(ctx) {
   const p = makePaths(ctx);
   if (!existsSync(p.SETTINGS_JSON)) {
-    warn(`${p.SETTINGS_JSON} not found; skip allowlist`);
+    warn(`未找到 ${p.SETTINGS_JSON}；跳过 allowlist`);
     return;
   }
   let d;
   try { d = JSON.parse(readFileSync(p.SETTINGS_JSON, 'utf8')); }
-  catch (e) { warn(`invalid ${p.SETTINGS_JSON}: ${e.message}; skip`); return; }
+  catch (e) { warn(`${p.SETTINGS_JSON} 解析失败: ${e.message}；跳过`); return; }
 
   const need = [
     'mcp__coding-bridge__review_code',
@@ -578,15 +578,15 @@ function installCodingBridgeAllow(ctx) {
   const perms = d.permissions ?? {};
   const allow = perms.allow ?? [];
   const added = need.filter(t => !allow.includes(t));
-  if (added.length === 0) { log(`coding-bridge allowlist: already present; no change`); return; }
-  if (ctx.dryRun) { log(`[dry-run] would add ${added.join(', ')} to ${p.SETTINGS_JSON} permissions.allow`); return; }
+  if (added.length === 0) { log(`coding-bridge allowlist: 已存在；无需改动`); return; }
+  if (ctx.dryRun) { log(`[dry-run] 将添加 ${added.join(', ')} 到 ${p.SETTINGS_JSON} 的 permissions.allow`); return; }
 
-  const sBak = backupOnce(p.SETTINGS_JSON); if (sBak) log(`backup: ${sBak}`);
+  const sBak = backupOnce(p.SETTINGS_JSON); if (sBak) log(`备份: ${sBak}`);
   allow.push(...added);
   perms.allow = allow;
   d.permissions = perms;
   atomicWriteJSON(p.SETTINGS_JSON, d, { mode: 0o600 });
-  log(`added ${added.length} entry: ${added.join(', ')}`);
+  log(`已添加 ${added.length} 条: ${added.join(', ')}`);
 }
 
 // ─── coding-bridge mcp verify ──────────────────
@@ -603,8 +603,8 @@ function installCodingBridgeMcp(ctx) {
       cbOk = s['coding-bridge']?.command === 'uvx';
     } catch {}
   }
-  if (cbOk) log(`coding-bridge MCP: uvx entry in ${p.CLAUDE_JSON} (claude mcp list 可见)`);
-  else { warn(`coding-bridge MCP: NOT in ${p.CLAUDE_JSON} mcpServers (run ./install.sh install-coding-bridge-json)`); ok = false; }
+  if (cbOk) log(`coding-bridge MCP: uvx 条目已在 ${p.CLAUDE_JSON}（claude mcp list 可见）`);
+  else { warn(`coding-bridge MCP: 不在 ${p.CLAUDE_JSON} 的 mcpServers 中（运行 ./install.sh install-coding-bridge-json）`); ok = false; }
 
   // 2. uvx（用 PATH 探测 + 常见安装位置；不调 shell 子进程避免 DEP0190）
   const uvxFound = ['uvx'].some(name => {
@@ -615,8 +615,8 @@ function installCodingBridgeMcp(ctx) {
     const homeBin = join(ctx.home, '.local', 'bin', name);
     return existsSync(homeBin);
   });
-  if (uvxFound) log(`uvx: installed`);
-  else { warn(`uvx NOT installed; install with: curl -LsSf https://astral.sh/uv/install.sh | sh`); ok = false; }
+  if (uvxFound) log(`uvx: 已安装`);
+  else { warn(`uvx 未安装；安装命令: curl -LsSf https://astral.sh/uv/install.sh | sh`); ok = false; }
 
   // 3. env（仅 coding-bridge 需要）
   // 新版：coding-bridge-mcp 内部按 provider 优先级匹配 key
@@ -625,14 +625,14 @@ function installCodingBridgeMcp(ctx) {
   const ark = process.env.ARK_API_KEY || process.env.CODING_BRIDGE_API_KEY;
   if (spark || ark) {
     const provider = process.env.CODING_BRIDGE_PROVIDER || 'xfyun-coding';
-    log(`coding-bridge env: PROVIDER=${provider}; spark=${spark ? 'set' : 'unset'}; ark=${ark ? 'set' : 'unset'}`);
-  } else { warn(`coding-bridge KEY NOT set (SPARK_API_KEY / ARK_API_KEY / CODING_BRIDGE_API_KEY 任一); export it in ~/.zshrc`); ok = false; }
+    log(`coding-bridge env: PROVIDER=${provider}; spark=${spark ? '已设置' : '未设置'}; ark=${ark ? '已设置' : '未设置'}`);
+  } else { warn(`coding-bridge KEY 未设置（SPARK_API_KEY / ARK_API_KEY / CODING_BRIDGE_API_KEY 任一）；请在 ~/.zshrc 中 export`); ok = false; }
 
   // 4. settings.json allowlist（含 coding-bridge）
   installCodingBridgeAllow(ctx);
 
-  if (ok) log(`coding-bridge MCP: ready (restart Claude Code to activate)`);
-  else warn(`coding-bridge MCP not fully wired; see warnings above`);
+  if (ok) log(`coding-bridge MCP: 就绪（重启 Claude Code 以激活）`);
+  else warn(`coding-bridge MCP 未完全接好；见上方警告`);
   return ok;
 }
 
@@ -640,18 +640,18 @@ function installCodingBridgeMcp(ctx) {
 function installStatusline(ctx) {
   const base = join(ctx.repo, 'global', 'json', 'statusline.base.json');
   const target = makePaths(ctx).SETTINGS_JSON;
-  if (!existsSync(base)) fatal(`missing base: ${base}`);
-  log(`merging statusLine into ${target}`);
-  if (ctx.dryRun) { log(`[dry-run] would merge: ${readFileSync(base, 'utf8').trim()}`); return; }
+  if (!existsSync(base)) fatal(`缺少 base 文件: ${base}`);
+  log(`合并 statusLine 到 ${target}`);
+  if (ctx.dryRun) { log(`[dry-run] 将合并: ${readFileSync(base, 'utf8').trim()}`); return; }
   mkdirSync(dirname(target), { recursive: true });
-  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) { const stBak = backupOnce(target); if (stBak) log(`backup: ${stBak}`); }
+  if (existsSync(target) && !lstatSync(target).isSymbolicLink()) { const stBak = backupOnce(target); if (stBak) log(`备份: ${stBak}`); }
   let tgt = {};
   try { tgt = JSON.parse(readFileSync(target, 'utf8')); }
-  catch (e) { fatal(`invalid JSON in ${target}: ${e.message}`); }
+  catch (e) { fatal(`${target} JSON 解析失败: ${e.message}`); }
   const baseCfg = JSON.parse(readFileSync(base, 'utf8'));
   tgt.statusLine = { ...(tgt.statusLine ?? {}), ...(baseCfg.statusLine ?? {}) };
   atomicWriteJSON(target, tgt, { mode: 0o600 });
-  log(`statusLine merged`);
+  log(`statusLine 已合并`);
 }
 
 // ─── ccstatusline-zh 安装 + 配置写入 ──────────────────
@@ -670,20 +670,20 @@ function ensureCcstatuslineInstalled(ctx) {
   const found = CANDIDATES.find(p => existsSync(p));
 
   if (found) {
-    log(`ccstatusline-zh: installed (${found})`);
+    log(`ccstatusline-zh: 已安装（${found}）`);
     return;
   }
 
-  log(`ccstatusline-zh not found; running: npm i -g ccstatusline-zh`);
-  if (ctx.dryRun) { log(`[dry-run] would run: npm install -g ccstatusline-zh`); return; }
+  log(`未找到 ccstatusline-zh；执行: npm i -g ccstatusline-zh`);
+  if (ctx.dryRun) { log(`[dry-run] 将执行: npm install -g ccstatusline-zh`); return; }
 
   const r = spawnSync('npm', ['install', '-g', 'ccstatusline-zh'], {
     encoding: 'utf8', stdio: 'inherit',
   });
   if (r.status !== 0) {
-    fatal(`ccstatusline-zh install failed (npm exit ${r.status}); try manually: npm i -g ccstatusline-zh`);
+    fatal(`ccstatusline-zh 安装失败（npm 退出码 ${r.status}）；请手动执行: npm i -g ccstatusline-zh`);
   }
-  log(`ccstatusline-zh: installed via npm i -g`);
+  log(`ccstatusline-zh: 已通过 npm i -g 安装`);
 }
 
 function installCcstatusline(ctx) {
@@ -691,7 +691,7 @@ function installCcstatusline(ctx) {
   // 配置文件路径固定 ~/.config/ccstatusline/settings.json,与上游一致
   const src = join(ctx.repo, 'global', 'json', 'ccstatusline.base.json');
   const dst = join(ctx.home, '.config', 'ccstatusline', 'settings.json');
-  if (!existsSync(src)) fatal(`missing base: ${src}`);
+  if (!existsSync(src)) fatal(`缺少 base 文件: ${src}`);
   installLinkOrCopy(src, dst, ctx);
 }
 
@@ -700,8 +700,8 @@ function doctor(ctx) {
   const py = spawnSync('python3', [join(ctx.repo, 'tools', 'scan-secrets.py'), ctx.repo], { encoding: 'utf8' });
   process.stdout.write(py.stdout);
   process.stderr.write(py.stderr);
-  if (py.status !== 0) fatal(`doctor: secret pattern(s) detected`);
-  log(`doctor: clean`);
+  if (py.status !== 0) fatal(`doctor: 检测到 secret 特征`);
+  log(`doctor: 检查通过`);
 }
 
 // ─── check ────────────────────────────────────────────
@@ -711,22 +711,22 @@ function check(ctx) {
   for (const [, dstRel] of MAP) {
     const dst = join(p.TARGET_HOME, dstRel);
     const homeRel = relative(ctx.home, dst);
-    if (!existsSync(dst)) { warn(`missing: ${homeRel}`); bad = 1; continue; }
+    if (!existsSync(dst)) { warn(`缺失: ${homeRel}`); bad = 1; continue; }
     let isLink = false;
     try { isLink = lstatSync(dst).isSymbolicLink(); } catch {}
     if (isLink) {
       const t = readlinkSync(dst);
-      if (!existsSync(t)) { warn(`broken: ${homeRel} → ${t}`); bad = 1; }
-      else log(`ok: ${homeRel}`);
-    } else log(`ok (real): ${homeRel}`);
+      if (!existsSync(t)) { warn(`断链: ${homeRel} → ${t}`); bad = 1; }
+      else log(`正常: ${homeRel}`);
+    } else log(`正常（实体文件）: ${homeRel}`);
   }
   for (const h of discoverHooks(ctx.repo)) {
     const dst = join(p.HOOKS_DIR_TARGET, h);
-    if (!existsSync(dst)) { warn(`missing hook: ${h}`); bad = 1; continue; }
+    if (!existsSync(dst)) { warn(`缺失 hook: ${h}`); bad = 1; continue; }
     let isLink = false;
     try { isLink = lstatSync(dst).isSymbolicLink(); } catch {}
-    if (isLink && !existsSync(readlinkSync(dst))) { warn(`broken hook: ${h}`); bad = 1; continue; }
-    log(`ok hook: ${h}`);
+    if (isLink && !existsSync(readlinkSync(dst))) { warn(`断链 hook: ${h}`); bad = 1; continue; }
+    log(`正常 hook: ${h}`);
   }
   if (bad) process.exit(1);
 }
@@ -734,7 +734,7 @@ function check(ctx) {
 // ─── uninstall ───────────────────────────────────────
 function uninstall(ctx) {
   const p = makePaths(ctx);
-  log(`uninstall — restoring from latest backup`);
+  log(`卸载 — 从最近备份恢复`);
   if (existsSync(p.BACKUP_ROOT)) {
     const snaps = readdirSync(p.BACKUP_ROOT)
       .filter(d => { try { return statSync(join(p.BACKUP_ROOT, d)).isDirectory(); } catch { return false; } })
@@ -742,7 +742,7 @@ function uninstall(ctx) {
       .reverse();
     if (snaps.length > 0 && !ctx.dryRun) {
       const latest = join(p.BACKUP_ROOT, snaps[0]);
-      log(`restoring from ${latest}`);
+      log(`从 ${latest} 恢复`);
       spawnSync('cp', ['-a', `${latest}/.`, `${p.TARGET_HOME}/`]);
     }
   }
@@ -750,7 +750,7 @@ function uninstall(ctx) {
     const dst = join(p.TARGET_HOME, dstRel);
     try {
       if (lstatSync(dst).isSymbolicLink()) {
-        log(`unlink: ${relative(ctx.home, dst)}`);
+        log(`解除链接: ${relative(ctx.home, dst)}`);
         if (!ctx.dryRun) unlinkSync(dst);
       }
     } catch {}
@@ -759,33 +759,33 @@ function uninstall(ctx) {
     const dst = join(p.HOOKS_DIR_TARGET, h);
     try {
       if (lstatSync(dst).isSymbolicLink()) {
-        log(`unlink: hooks/${h}`);
+        log(`解除链接: hooks/${h}`);
         if (!ctx.dryRun) unlinkSync(dst);
       }
     } catch {}
   }
   const marker = join(ctx.home, '.claude', '.dotclaude-portable.version');
   if (existsSync(marker)) {
-    log(`removing version marker`);
+    log(`删除 version marker`);
     if (!ctx.dryRun) rmSync(marker);
   }
   stripShellProfile(ctx);
-  log(`done`);
+  log(`完成`);
 }
 
 // ─── rollback ────────────────────────────────────────
 function rollback(ctx) {
   const p = makePaths(ctx);
-  if (!existsSync(p.BACKUP_ROOT)) fatal(`no backups at ${p.BACKUP_ROOT}`);
+  if (!existsSync(p.BACKUP_ROOT)) fatal(`${p.BACKUP_ROOT} 下没有备份`);
   const snaps = readdirSync(p.BACKUP_ROOT)
     .filter(d => { try { return statSync(join(p.BACKUP_ROOT, d)).isDirectory(); } catch { return false; } })
     .sort()
     .reverse();
   const snap = snaps[ctx.rollbackN - 1];
-  if (!snap) fatal(`no backup at slot #${ctx.rollbackN}`);
-  log(`rolling back to ${snap}`);
+  if (!snap) fatal(`第 #${ctx.rollbackN} 个备份槽位不存在`);
+  log(`回滚到 ${snap}`);
   if (!ctx.dryRun) spawnSync('cp', ['-a', `${join(p.BACKUP_ROOT, snap)}/.`, `${p.TARGET_HOME}/`]);
-  log(`done`);
+  log(`完成`);
 }
 
 // ─── install 主流程 ───────────────────────────────────
@@ -794,7 +794,7 @@ function install(ctx) {
   mkdirSync(p.TARGET_HOME, { recursive: true });
   const marker = join(ctx.home, '.claude', '.dotclaude-portable.version');
   if (!existsSync(marker)) backupExisting(ctx);
-  else log(`already managed; skipping full backup`);
+  else log(`已在托管中；跳过全量备份`);
   for (const [src, dst, kind] of MAP) {
     renderInstall(join(ctx.repo, src), join(p.TARGET_HOME, dst), kind, ctx);
   }
@@ -806,9 +806,9 @@ function install(ctx) {
   installCodingBridgeJson(ctx);
   const cbReady = installCodingBridgeMcp(ctx);
   installCcstatusline(ctx);
-  log(`done. managed: ${p.TARGET_HOME}`);
+  log(`完成。托管目录: ${p.TARGET_HOME}`);
   if (!cbReady && !ctx.dryRun) {
-    warn(`coding-bridge fallback chain not fully wired; recommend: ./install.sh doctor`);
+    warn(`coding-bridge fallback 链未完全接好；建议运行: ./install.sh doctor`);
   }
 }
 
@@ -868,7 +868,7 @@ function parseArgs(argv) {
         positionals.push('help'); break;
       default:
         if (a.startsWith('-')) {
-          err(`unknown arg: ${a}`);
+          err(`未知参数: ${a}`);
           process.exit(2);
         }
         positionals.push(a);
@@ -913,7 +913,7 @@ async function main() {
   };
 
   const fn = handlers[ctx.action];
-  if (!fn) { err(`unknown action: ${ctx.action}`); process.exit(2); }
+  if (!fn) { err(`未知动作: ${ctx.action}`); process.exit(2); }
   // handler 返回 false 表示部分失败（如 install-lsp-servers 有 server 装失败），传导为非零退出码
   const ok = await fn();
   if (ok === false) process.exit(1);
