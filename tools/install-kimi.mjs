@@ -21,10 +21,10 @@ import {
   statSync,
   renameSync,
 } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { backupOnce } from './lib/backup.mjs';
+import { backupOnce, pruneFileBackups } from './lib/backup.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DEFAULT = join(__dirname, '..');
@@ -33,7 +33,7 @@ const REPO_DEFAULT = join(__dirname, '..');
 function log(msg) { console.log(`[install-kimi] ${msg}`); }
 function warn(msg) { console.warn(`[install-kimi][warn] ${msg}`); }
 function err(msg) { console.error(`[install-kimi][err] ${msg}`); }
-function fatal(msg) { process.exit(1); }
+function fatal(msg) { err(msg); process.exit(1); }
 
 // ─── 路径常量 ──────────────────────────────────────────
 // Kimi Code 数据根：KIMI_CODE_HOME 优先，默认 ~/.kimi-code
@@ -77,6 +77,15 @@ function renderTemplate(text, env = process.env) {
   });
 }
 
+// symlink 目标必须在仓库内才允许 unlink（防止误删用户指向别处的 symlink）
+function linkPointsIntoRepo(dst, ctx) {
+  let t;
+  try { t = readlinkSync(dst); } catch { return false; }
+  const abs = isAbsolute(t) ? t : join(dirname(dst), t);
+  const repoPrefix = ctx.repo.endsWith(sep) ? ctx.repo : ctx.repo + sep;
+  return abs === ctx.repo || abs.startsWith(repoPrefix);
+}
+
 // ─── symlink / copy 安装 ───────────────────────────────
 function installLinkOrCopy(src, dst, ctx) {
   if (!existsSync(src)) fatal(`源文件缺失: ${src}`);
@@ -95,10 +104,11 @@ function installLinkOrCopy(src, dst, ctx) {
     if (!ctx.force) fatal(`请用 --force 覆盖`);
     if (!ctx.dryRun) unlinkSync(dst);
   } else if (existing) {
-    if (!ctx.force) warn(`已存在: ${dst}（用 --force 覆盖）`);
+    if (!ctx.force) warn(`已存在: ${dst}（将备份后覆盖）`);
     if (!ctx.dryRun) {
       const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
       renameSync(dst, `${dst}.bak.${ts}`);
+      pruneFileBackups(dst);
     }
   }
 
@@ -174,7 +184,7 @@ function buildConfigBlock(ctx) {
   for (const h of discoverHooks(ctx.repo)) {
     const spec = HOOK_TOML[h];
     if (!spec) continue;
-    const cmd = `node ${join(p.HOOKS_DIR, h)}`;
+    const cmd = `node "${join(p.HOOKS_DIR, h)}"`;
     lines.push('', '[[hooks]]', `event = ${tomlStr(spec.event)}`);
     if (spec.matcher) lines.push(`matcher = ${tomlStr(spec.matcher)}`);
     lines.push(`command = ${tomlStr(cmd)}`);
@@ -263,7 +273,7 @@ function writeVersionFile(ctx) {
   if (existsSync(verFile)) ver = readFileSync(verFile, 'utf8').trim();
   if (ctx.dryRun) { log(`[dry-run] 将写入 ${p.MARKER}（${ver}）`); return; }
   mkdirSync(p.ROOT, { recursive: true });
-  writeFileSync(p.MARKER, `repo=${ctx.repo}\nversion=${ver}\ntarget=kimi-code\ninstalled_at=${new Date().toISOString()}\n`);
+  writeFileSync(p.MARKER, `repo=${ctx.repo}\nversion=${ver}\ntarget=kimi-code\ninstalled_at=${new Date().toISOString()}\n`, { mode: 0o600 });
 }
 
 // ─── check ────────────────────────────────────────────
@@ -293,10 +303,43 @@ function check(ctx) {
     if (isLink && !existsSync(readlinkSync(dst))) { warn(`断链 hook: ${h}`); bad = 1; continue; }
     log(`正常 hook: ${h}`);
   }
+  // mcp.json：存在、可解析、且包含 base 里全部 server
+  if (!existsSync(p.MCP_JSON)) { warn(`缺失: mcp.json`); bad = 1; }
+  else {
+    let tgtMcp = null;
+    try { tgtMcp = JSON.parse(readFileSync(p.MCP_JSON, 'utf8')); }
+    catch { warn(`mcp.json 解析失败`); bad = 1; }
+    if (tgtMcp) {
+      let baseServers = {};
+      try {
+        const base = join(ctx.repo, 'global', 'json', 'mcp.base.json');
+        baseServers = JSON.parse(renderTemplate(readFileSync(base, 'utf8'))).mcpServers ?? {};
+      } catch { warn(`mcp.base.json 解析失败`); bad = 1; }
+      const tgtServers = tgtMcp.mcpServers ?? {};
+      const missing = Object.keys(baseServers).filter(n => !(n in tgtServers));
+      if (missing.length > 0) { warn(`mcp.json: 缺少 server: ${missing.join(', ')}`); bad = 1; }
+      else log(`正常: mcp.json`);
+    }
+  }
   if (existsSync(p.CONFIG_TOML)) {
     const txt = readFileSync(p.CONFIG_TOML, 'utf8');
-    if (txt.includes(BLOCK_START) && txt.includes(BLOCK_END)) log(`正常: config.toml 托管块`);
-    else { warn(`config.toml: 托管块缺失`); bad = 1; }
+    if (txt.includes(BLOCK_START) && txt.includes(BLOCK_END)) {
+      log(`正常: config.toml 托管块`);
+      // 托管块内每个 hook command 的引号路径必须存在
+      const block = txt.slice(txt.indexOf(BLOCK_START), txt.indexOf(BLOCK_END));
+      for (const line of block.split('\n')) {
+        if (!line.startsWith('command = ')) continue;
+        const segs = [...line.matchAll(/"((?:\\.|[^"\\])*)"/g)].map(m => {
+          try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; }
+        });
+        const last = segs[segs.length - 1] ?? '';
+        const inner = [...last.matchAll(/"([^"]*)"/g)].map(m => m[1]);
+        const hookPath = inner[inner.length - 1] ?? '';
+        if (!hookPath || !existsSync(hookPath)) {
+          warn(`config.toml: hook command 路径失效: ${line.trim()}`); bad = 1;
+        }
+      }
+    } else { warn(`config.toml: 托管块缺失`); bad = 1; }
   } else { warn(`缺失: config.toml`); bad = 1; }
   if (bad) process.exit(1);
 }
@@ -325,6 +368,7 @@ function uninstall(ctx) {
     const dst = join(p.ROOT, dstRel);
     try {
       if (lstatSync(dst).isSymbolicLink()) {
+        if (!linkPointsIntoRepo(dst, ctx)) { log(`跳过（symlink 指向仓库外）: ${dstRel}`); continue; }
         log(`解除链接: ${dstRel}`);
         if (!ctx.dryRun) unlinkSync(dst);
       }
@@ -334,6 +378,7 @@ function uninstall(ctx) {
     const dst = join(p.HOOKS_DIR, h);
     try {
       if (lstatSync(dst).isSymbolicLink()) {
+        if (!linkPointsIntoRepo(dst, ctx)) { log(`跳过（symlink 指向仓库外）: hooks/${h}`); continue; }
         log(`解除链接: hooks/${h}`);
         if (!ctx.dryRun) unlinkSync(dst);
       }
@@ -426,7 +471,7 @@ async function main() {
     action: raw.action,
     mode: raw.mode,
     repo: raw.repo ?? REPO_DEFAULT,
-    home: raw.home ?? homedir(),
+    home: raw.home || homedir(),
     dryRun: raw.dryRun,
     force: raw.force,
     withCommands: raw.withCommands,

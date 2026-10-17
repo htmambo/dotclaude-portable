@@ -12,7 +12,7 @@ esac
 
 # bash 3.2+ 校验（macOS 系统 bash 3.2.57 也兼容；2.x 旧 bash 缺 [[ ]] 拒收）
 if [[ "${BASH_VERSINFO[0]:-0}" -lt 3 ]]; then
-  echo "[err] 需要 bash >= 3.2（当前: ${BASH_VERSION:-未知}）" >&2
+  echo "[err] 需要 bash >= 3（当前: ${BASH_VERSION:-未知}）" >&2
   exit 1
 fi
 

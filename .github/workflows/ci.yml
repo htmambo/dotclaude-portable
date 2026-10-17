@@ -79,6 +79,14 @@ jobs:
           HOME="$HOME_DIR" ./install-kimi.sh --force
           HOME="$HOME_DIR" ./install-kimi.sh --check
           HOME="$HOME_DIR" ./install-kimi.sh --uninstall
+          CMD_HOME_DIR="${{ runner.temp }}/fake-home-kimi-commands"
+          mkdir -p "$CMD_HOME_DIR"
+          HOME="$CMD_HOME_DIR" ./install-kimi.sh --force --with-commands
+          HOME="$CMD_HOME_DIR" ./install-kimi.sh --check --with-commands
+          COPY_HOME_DIR="${{ runner.temp }}/fake-home-kimi-copy"
+          mkdir -p "$COPY_HOME_DIR"
+          HOME="$COPY_HOME_DIR" ./install-kimi.sh --force --copy
+          HOME="$COPY_HOME_DIR" ./install-kimi.sh --check
 
       - name: standalone scan-secrets on repo
         shell: bash

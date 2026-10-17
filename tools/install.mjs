@@ -22,11 +22,11 @@ import {
   accessSync,
   constants as fsConstants,
 } from 'node:fs';
-import { dirname, join, basename, relative } from 'node:path';
+import { dirname, join, basename, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { backupOnce } from './lib/backup.mjs';
+import { backupOnce, pruneFileBackups } from './lib/backup.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DEFAULT = join(__dirname, '..');
@@ -37,7 +37,7 @@ const MAX_BACKUPS = 3;
 function log(msg) { console.log(`[install] ${msg}`); }
 function warn(msg) { console.warn(`[install][warn] ${msg}`); }
 function err(msg) { console.error(`[install][err] ${msg}`); }
-function fatal(msg) { process.exit(1); }
+function fatal(msg) { err(msg); process.exit(1); }
 
 // ─── 路径常量 ──────────────────────────────────────────
 function makePaths(ctx) {
@@ -55,7 +55,7 @@ function makePaths(ctx) {
 }
 
 // ─── 备份 ──────────────────────────────────────────────
-// backupOnce 已抽到 ./lib/backup.mjs（参见 import）
+// backupOnce / pruneFileBackups 已抽到 ./lib/backup.mjs（参见 import）
 // 行为不变：仅首次备份；symlink 跳过；命名 `<file>.bak.YYYYMMDDHHMMSS`
 
 function atomicWriteFile(file, content, { mode = 0o644 } = {}) {
@@ -213,6 +213,15 @@ function installLspServers(ctx) {
   return true;
 }
 
+// symlink 目标必须在仓库内才允许 unlink（防止误删用户指向别处的 symlink）
+function linkPointsIntoRepo(dst, ctx) {
+  let t;
+  try { t = readlinkSync(dst); } catch { return false; }
+  const abs = isAbsolute(t) ? t : join(dirname(dst), t);
+  const repoPrefix = ctx.repo.endsWith(sep) ? ctx.repo : ctx.repo + sep;
+  return abs === ctx.repo || abs.startsWith(repoPrefix);
+}
+
 // ─── symlink / copy 安装 ───────────────────────────────
 function installLinkOrCopy(src, dst, ctx) {
   if (!existsSync(src)) fatal(`源文件缺失: ${src}`);
@@ -232,10 +241,11 @@ function installLinkOrCopy(src, dst, ctx) {
     if (!ctx.force) fatal(`请用 --force 覆盖`);
     if (!ctx.dryRun) unlinkSync(dst);
   } else if (existing) {
-    if (!ctx.force) warn(`已存在: ${relative(ctx.home, dst)}（用 --force 覆盖）`);
+    if (!ctx.force) warn(`已存在: ${relative(ctx.home, dst)}（将备份后覆盖）`);
     if (!ctx.dryRun) {
       const ts = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
       renameSync(dst, `${dst}.bak.${ts}`);
+      pruneFileBackups(dst);
     }
   }
 
@@ -413,7 +423,7 @@ function writeVersionFile(ctx) {
   const verFile = join(ctx.repo, 'VERSION');
   if (existsSync(verFile)) ver = readFileSync(verFile, 'utf8').trim();
   if (ctx.dryRun) { log(`[dry-run] 将写入 ${marker}（${ver}）`); return; }
-  writeFileSync(marker, `repo=${ctx.repo}\nversion=${ver}\ninstalled_at=${new Date().toISOString()}\n`);
+  writeFileSync(marker, `repo=${ctx.repo}\nversion=${ver}\ninstalled_at=${new Date().toISOString()}\n`, { mode: 0o600 });
 }
 
 // ─── pre-commit hook: sync-docs 检查 ──────────────────
@@ -647,7 +657,10 @@ function installStatusline(ctx) {
   if (existsSync(target) && !lstatSync(target).isSymbolicLink()) { const stBak = backupOnce(target); if (stBak) log(`备份: ${stBak}`); }
   let tgt = {};
   try { tgt = JSON.parse(readFileSync(target, 'utf8')); }
-  catch (e) { fatal(`${target} JSON 解析失败: ${e.message}`); }
+  catch (e) {
+    // settings.json 不存在（ENOENT）时用 {} 默认值继续；其他错误（JSON 损坏等）才 fatal
+    if (e.code !== 'ENOENT') fatal(`${target} JSON 解析失败: ${e.message}`);
+  }
   const baseCfg = JSON.parse(readFileSync(base, 'utf8'));
   tgt.statusLine = { ...(tgt.statusLine ?? {}), ...(baseCfg.statusLine ?? {}) };
   atomicWriteJSON(target, tgt, { mode: 0o600 });
@@ -750,6 +763,7 @@ function uninstall(ctx) {
     const dst = join(p.TARGET_HOME, dstRel);
     try {
       if (lstatSync(dst).isSymbolicLink()) {
+        if (!linkPointsIntoRepo(dst, ctx)) { log(`跳过（symlink 指向仓库外）: ${relative(ctx.home, dst)}`); continue; }
         log(`解除链接: ${relative(ctx.home, dst)}`);
         if (!ctx.dryRun) unlinkSync(dst);
       }
@@ -759,6 +773,7 @@ function uninstall(ctx) {
     const dst = join(p.HOOKS_DIR_TARGET, h);
     try {
       if (lstatSync(dst).isSymbolicLink()) {
+        if (!linkPointsIntoRepo(dst, ctx)) { log(`跳过（symlink 指向仓库外）: hooks/${h}`); continue; }
         log(`解除链接: hooks/${h}`);
         if (!ctx.dryRun) unlinkSync(dst);
       }
@@ -888,7 +903,7 @@ async function main() {
     action: raw.action,
     mode: raw.mode,
     repo: raw.repo ?? REPO_DEFAULT,
-    home: raw.home ?? homedir(),
+    home: raw.home || homedir(),
     dryRun: raw.dryRun,
     force: raw.force,
     rollbackN: raw.rollbackN,

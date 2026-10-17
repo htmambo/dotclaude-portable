@@ -61,6 +61,18 @@ with open(sys.argv[1], 'rb') as f:
 EOF
 fi
 
+step "6c. install-kimi --with-commands"
+CMD_HOME="${WORK}/fake-home-kimi-commands"
+mkdir -p "$CMD_HOME"
+HOME="$CMD_HOME" "$REPO_ROOT/install-kimi.sh" --force --with-commands
+HOME="$CMD_HOME" "$REPO_ROOT/install-kimi.sh" --check --with-commands
+
+step "6d. install-kimi --copy mode"
+COPY_HOME="${WORK}/fake-home-kimi-copy"
+mkdir -p "$COPY_HOME"
+HOME="$COPY_HOME" "$REPO_ROOT/install-kimi.sh" --force --copy
+HOME="$COPY_HOME" "$REPO_ROOT/install-kimi.sh" --check
+
 step "7. standalone scan-secrets"
 python3 "$REPO_ROOT/tools/scan-secrets.py" "$REPO_ROOT"
 
